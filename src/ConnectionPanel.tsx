@@ -82,19 +82,37 @@ export default function ConnectionPanel({
           <ArrowLeft />
           Connections
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon" aria-label="Connection options" />}
-          >
-            <MoreHorizontal />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setRemove(true)}>
-              <Unlink />
-              Remove connection
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          {recruiter && (
+            <Button
+              ref={roleTrigger}
+              variant="ghost"
+              size="sm"
+              aria-expanded={roleOpen}
+              aria-controls={`role-context-${current.id}`}
+              onClick={() => {
+                if (roleOpen) roleHeading.current?.focus();
+                else onRoleOpenChange(true);
+              }}
+            >
+              <BriefcaseBusiness />
+              {roleOpen ? 'Role context' : 'View for a role'}
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon" aria-label="Connection options" />}
+            >
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setRemove(true)}>
+                <Unlink />
+                Remove connection
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
       <header className="profile-heading">
         <Avatar name={person.name} size="large" />
@@ -162,20 +180,6 @@ export default function ConnectionPanel({
             <section className="profile-section">
               <div className="section-topline">
                 <h2>Shared work</h2>
-                <Button
-                  ref={roleTrigger}
-                  variant="ghost"
-                  size="sm"
-                  aria-expanded={roleOpen}
-                  aria-controls={`role-context-${current.id}`}
-                  onClick={() => {
-                    if (roleOpen) roleHeading.current?.focus();
-                    else onRoleOpenChange(true);
-                  }}
-                >
-                  <BriefcaseBusiness />
-                  {roleOpen ? 'Role context' : 'View for a role'}
-                </Button>
               </div>
               {c.materials.length ? (
                 c.materials.map((m) => (
@@ -391,7 +395,12 @@ function RoleContext({
       )}
       {result && (
         <div className="role-passages">
-          {result.brief.mode === 'ai' && result.brief.summary && <p>{result.brief.summary}</p>}
+          {result.brief.mode === 'ai' && result.brief.summary && (
+            <div className="role-summary">
+              <span>AI summary</span>
+              <p>{result.brief.summary}</p>
+            </div>
+          )}
           {result.brief.findings.map((f, i) => {
             const s = result.sources.find((s) => s.id === f.sourceId);
             if (!f.quote || !s) return null;
@@ -399,6 +408,7 @@ function RoleContext({
               <section key={i}>
                 <h3>{f.requirement}</h3>
                 <blockquote>{f.quote}</blockquote>
+                {result.brief.mode === 'ai' && f.note && <p className="finding-note">{f.note}</p>}
                 <button
                   className="text-action"
                   onClick={() => setSource({ document: s, quote: f.quote! })}

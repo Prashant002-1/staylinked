@@ -71,7 +71,7 @@ export function createApp(options = {}) {
   const config = options.aiConfig || {
     apiKey: process.env.OPENCODE_API_KEY,
     baseUrl: process.env.OPENCODE_BASE_URL || 'https://opencode.ai/zen/go/v1',
-    model: process.env.OPENCODE_MODEL || 'glm-5.2',
+    model: process.env.OPENCODE_MODEL || 'glm-5.3',
   };
   const publicUrl = options.publicUrl || process.env.PUBLIC_URL;
   const app = express();

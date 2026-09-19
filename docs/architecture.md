@@ -50,4 +50,8 @@ References: [Rust error handling](https://doc.rust-lang.org/book/ch09-02-recover
 
 The Chat Completions adapter constructs at most 40,000 source characters, with up to 4,500 per source. A result must contain each role requirement exactly once and quote only supplied text. Validation checks both the full sources and the smaller model context. Cache inputs include the role, materials, recap, model, and endpoint.
 
-The key stays in server environment variables. The model has no tools or write actions. Invalid output, provider errors, and a 25-second timeout fall back to Rust matches. Quotation provenance does not establish factual truth or summary accuracy. Live provider behavior and cost remain unmeasured.
+The key stays in server environment variables. The model has no tools or write actions. Invalid output, provider errors, and a 25-second timeout fall back to Rust matches. A short failure category is returned for diagnostics without provider response bodies. Quotation provenance does not establish factual truth or summary accuracy.
+
+GLM-5.3 uses `reasoning_effort: low` for this bounded organization task. Its [documented default is maximum reasoning](https://docs.z.ai/guides/llm/glm-5.3); reasoning remains enabled. Requests identify Staylinked through its user agent and carry a stable opaque session hash for the person, encounter, and role, following [OpenCode Go's client guidance](https://opencode.ai/docs/go/). No external provider SDK is needed.
+
+`npm run provider:check` runs an opt-in live check against the seeded fictional Aisha/Product Engineer fixture in an in-memory database. It checks citation validity and cache reuse, and prints status metadata without credentials or source text. It does not read or modify the user's stored records. Real-world latency and cost have not been benchmarked.

@@ -1,40 +1,71 @@
-# Desktop demo rehearsal
+# Two-minute desktop demo
 
-This is a roughly three-minute walkthrough using fictional people and project work. No model API key is required. The default role lookup runs locally in Rust.
+The demo addresses **Side A: Trust coming in, the applicant flood**. Preserve the context behind a recruiter's prior human impression through a candidate-authored meeting note and inspectable work. When applications arrive, the recruiter can revisit people already met. This covers existing encounters, not every application; recruiter time savings have not been measured.
 
-## Prepare once
+Use fictional **Maya Chen**, recruiter at Northstar, and **Aisha Patel**, applicant. Keep uploads, event creation, account setup, and role lookup warmup outside the two-minute clock.
 
-```sh
-npm ci
-npm run build
-npm start
+## Before the clock
+
+1. Start the local app and open [localhost:5173](http://localhost:5173). Use the recruiter/applicant demo accounts. Ordinary tabs share a session: switch accounts in one active tab, rather than treating two tabs as independent users. Keep existing records; no database reset is needed.
+2. As Aisha, use **Your profile** to check her headline and the seeded **Wayfinder · building an offline trip planner** note. If you want an uploaded file in the demo, upload `examples/software-project.txt` now. Finish all profile/work edits before warming the role lookup. Leave LinkedIn blank unless an appropriate URL is supplied.
+3. Switch to Maya. Use **Share my code → New event** to create **Desktop rehearsal** with today's date. Save a screenshot of its QR, including the full white border, and copy its invitation link. QR capture and image scanning are preparation, not timed steps.
+4. Use **Preview → Try as an applicant**. Submit the detail and recap below once. This prepares a repeatable encounter; the timed run will use **Save changes**, not pretend to create a second connection.
+5. Switch back to Maya, open Aisha, choose **Desktop rehearsal** in **Meeting** if needed, then **View for a role → Product Engineer**. Wait for passages, open a source, and check its highlighted quotation. Keep the same profile, work, role, and recap for the live run. Return to **Connections** and choose **Desktop rehearsal** in the event filter.
+6. Start as Maya with the QR dialog closed. Have the two short texts below ready to paste. Rehearse once with a timer; wait at each boundary if ahead. **Preview** stays in the same tab, so the entire timed path uses one window.
+
+**A detail to remember**
+
+```text
+The trip planner that still works on the subway
 ```
 
-Open [localhost:5173](http://localhost:5173) and choose **Maya Chen / Recruiter demo**. A fresh database includes Maya at Northstar, Aisha Patel, and five other connections. Existing local records are preserved. Use a separate `DATA_DIR` before starting if you need fresh demo data.
+**Meeting recap**
 
-Keep `examples/software-project.txt` ready for upload. Use one desktop browser and the account menu's **Switch to applicant** / **Switch to recruiter** actions. For simultaneous views, use separate browser profiles; ordinary tabs share an account session.
+```text
+We talked about Wayfinder's offline editing queue and the merge preview for conflicting changes. You mentioned Northstar's collaborative editing work. I explained how I tested interrupted sync and duplicate requests.
+```
 
-Before recording, open **Share my code**, select **NYU Tech & Design Fair**, and save an image of its QR using the browser's image menu or a screenshot. Keep the entire white border. The applicant scanner accepts an image, so a camera is unnecessary for this rehearsal.
+## Timed actions
 
-## Three-minute walkthrough
+| Time      | Action                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0:00–0:15 | As Maya, click **Share my code**. Show **Desktop rehearsal**, then **Preview**.                                                                           |
+| 0:15–0:45 | Click **Try as an applicant**. Show Aisha's specific detail and recap. Paste the prepared text if needed, then **Save changes**.                          |
+| 0:45–1:00 | Click **Add your work**. Briefly show the already-prepared Wayfinder note in **Your work**.                                                               |
+| 1:00–1:20 | Account menu → **Switch to recruiter**. Open **Aisha Patel**. Show the rehearsal's human meeting note; choose that meeting if necessary.                  |
+| 1:20–1:50 | Click **View for a role**, select **Product Engineer**, then click a source title beneath a quotation. Show the highlighted passage and close the source. |
+| 1:50–2:00 | Point to or hover over Aisha's **email icon**. Leave the profile on screen and finish at 2:00. Do not open the mail app or send outreach.                 |
 
-| Time      | Action                                                                                                                                                                                                                   | What to show                                                                                                                                                                                                            |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0:00–0:25 | As Maya, open **Aisha Patel**.                                                                                                                                                                                           | Her name, project work, and the original conversation about offline editing stay together. Return to **Connections** and use **All events** to filter to **NYU Tech & Design Fair**. This filters existing connections. |
-| 0:25–0:55 | Open **Share my code** and show the event. Close it, use the account menu to **Switch to applicant**, then **Scan a code → Choose image**. Select the saved QR and **Continue** after checking Maya and the event.       | The applicant confirms the invitation before entering a note. Aisha already has a seeded encounter at this event, so this rehearsal edits that encounter.                                                               |
-| 0:55–1:20 | Keep or update the recap, then **Save changes**. Select **Add your work → Upload file** and choose `examples/software-project.txt`.                                                                                      | The saved connection leads directly to Aisha's profile. Open the uploaded file to read its extracted text; **Download original** retrieves the file without leaving the app.                                            |
-| 1:20–1:45 | Open **Edit profile** and point out the optional **LinkedIn** field. Save a small headline change, then switch back to the recruiter.                                                                                    | Applicants maintain their own profile and work. Work is visible to their connections. Leave LinkedIn blank unless you have an appropriate URL to supply; the seed does not invent one.                                  |
-| 1:45–2:30 | Open Aisha, select **View for a role**, and choose **Product Engineer** in the side panel. Click a source title beneath a quotation. Close the source and use the pencil beside the role selector to edit a requirement. | The human meeting note remains alongside role-specific passages. The source opens with the exact quotation highlighted. Saving the role recomputes the lookup; topics without a passage remain explicit.                |
-| 2:30–3:00 | Return to **Connections**, open **Daniel Park**, and choose **Data Engineer**. Point out the email icon, then return and use the account menu's **Export event connections** or **Export connections**.                  | The selected role and open panel persist between people. Contact opens the user's email app or a supplied website; Staylinked does not send a message. CSV export follows the current event filter.                     |
+## Spoken script
 
-## Repeat or recover
+**0:00–0:15**
 
-- To demonstrate a new connection instead of editing Aisha's seeded encounter, use **Share my code → New event**, create a clearly named rehearsal event, and capture that event's QR. The applicant's final button is then **Connect**.
-- If the code cannot be read, choose a clearer image with its full border. If its invitation no longer exists, ask the recruiter to share the intended event's code again. **New event** creates a separate invitation; it does not rotate an existing code.
-- On one computer, keep using `localhost:5173`. There is no Network selector in the interface. Another computer needs a reachable host address configured through `PUBLIC_URL`; that is outside this single-desktop rehearsal.
-- Seed email addresses are fictional. Demonstrate the contact controls without sending outreach. A supplied LinkedIn URL gets the LinkedIn icon; other supplied links use a globe.
-- Uploads and edits persist. Remove a rehearsal upload through its options menu when finished. A candidate can edit a recap or project note, and the original recap remains available to both people.
+> When applications flood in, a recruiter may already have met someone worth revisiting. I built Staylinked to preserve that prior impression. Maya shares her event QR with Aisha; I’m opening the invitation directly for this desktop demo.
 
-## Describe the implementation accurately
+**0:15–0:45**
 
-The QR establishes access to an invitation; it does not prove that two people met. Recaps, profiles, and work are author supplied. Local role lookup finds literal word matches and exact passages, not a candidate score or a verification of their claims. No chat agent contacts either person. The optional OpenCode Go adapter is separate from this default demo, and live provider verification is pending a key.
+> Aisha records the detail Maya will remember: the trip planner that still works on the subway. She explains their discussion about offline editing and conflicting changes. This is her account of the conversation. I prepared this encounter earlier, so I’m saving the same note.
+
+**0:45–1:00**
+
+> Aisha maintains her own profile and work. Maya is not asked to write hundreds of recaps. This connection can develop after the event, as Aisha adds material.
+
+**1:00–1:20**
+
+> Back as Maya, I see that specific conversation alongside Aisha’s work. The useful memory survives beyond a name and a resume. Neither person needs to recreate their introduction when a relevant role opens.
+
+**1:20–1:50**
+
+> For Product Engineer, the model helps organize role context around supplied work. I can open the source and inspect the exact quotation. Rust provides local passage lookup when the provider is unavailable. React and SQLite handle the interface and records. Maya still judges what the experience means.
+
+**1:50–2:00**
+
+> Maya can reach out herself. When the flood arrives, start with people already met. The QR establishes access and context, not verified identity, truth, or endorsement.
+
+## Short fallbacks
+
+- **Camera or QR image unavailable:** use **Preview** or the copied invitation link. This is the same invitation route. The timed path does not require a camera.
+- **Provider unavailable:** use the local Rust lookup. No model key is required for it. Replace the script's model sentence with, “For Product Engineer, local Rust lookup finds passages in the supplied work.” The app falls back after a provider failure, but avoid waiting on a live timeout: check the prepared result before starting. If lookup still stalls, open the existing Wayfinder note directly and say, “Here is the underlying work; the role lookup is unavailable for this run.”
+- **Provider status:** `npm run provider:check` uses the fictional Aisha/Product Engineer fixture. A live OpenCode Go `glm-5.3` check returned HTTP 200 and valid exact quotations for all four requirements. The fresh lookup took 3,906 ms with lightweight reasoning; repeating it reused the cache with only one network request across both lookups. This is one observation, not a latency guarantee. Warm the actual demonstration encounter separately before starting.
+
+The people and work are fictional demo data. Contact controls use supplied details; the seed has no invented LinkedIn URL. Author-supplied material and cited passages are evidence to read, not verified claims or hiring scores.

@@ -464,16 +464,21 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
   const config = {
     apiKey: 'test-only-not-a-real-key',
     baseUrl: 'https://opencode.ai/zen/go/v1',
-    model: 'glm-5.2',
+    model: 'glm-5.3',
   };
   await t.test('supported chat endpoint and bearer header are sent server-side', async () => {
     let calls = 0;
+    const sessions = [];
     const fetchImpl = async (url, options) => {
       calls++;
       assert.equal(url, 'https://opencode.ai/zen/go/v1/chat/completions');
       assert.equal(options.headers.Authorization, 'Bearer test-only-not-a-real-key');
+      assert.equal(options.headers['User-Agent'], 'staylinked/0.1');
+      assert.match(options.headers['x-opencode-session'], /^[a-f0-9]{64}$/);
+      sessions.push(options.headers['x-opencode-session']);
       const body = JSON.parse(options.body);
-      assert.equal(body.model, 'glm-5.2');
+      assert.equal(body.model, 'glm-5.3');
+      assert.equal(body.reasoning_effort, 'low');
       assert.match(body.messages[0].content, /untrusted data/);
       assert.match(body.messages[1].content, /Ignore previous instructions/);
       return Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }] });
@@ -493,6 +498,7 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
       fetchImpl,
     });
     assert.equal(calls, 2);
+    assert.equal(sessions[0], sessions[1], 'source edits retain the same provider session');
   });
   await t.test('invented citations or duplicate requirements are rejected', () => {
     assert.throws(() =>
@@ -532,6 +538,7 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
     });
     assert.equal(result.mode, 'local');
     assert.equal(result.fallback, true);
+    assert.equal(result.fallbackReason, 'provider_http');
     assert.ok(result.notice);
     const malformed = await buildBrief({
       db,
@@ -544,6 +551,7 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
     });
     assert.equal(malformed.mode, 'local');
     assert.equal(malformed.fallback, true);
+    assert.equal(malformed.fallbackReason, 'invalid_response');
   });
   await t.test('without a key, local mode does not call a provider', async () => {
     const result = await buildBrief({

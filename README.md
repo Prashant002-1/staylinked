@@ -41,12 +41,12 @@ The OpenCode Go adapter uses an OpenAI-compatible Chat Completions endpoint. Cop
 ```dotenv
 OPENCODE_API_KEY=your-key-here
 OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1
-OPENCODE_MODEL=glm-5.2
+OPENCODE_MODEL=glm-5.3
 ```
 
-The model must support `/chat/completions`; see the [provider documentation](https://opencode.ai/v2/docs/console/go). A role lookup sends bounded source excerpts. The server validates source IDs, exact quotations, and requirement coverage, then caches valid results. Invalid responses, provider failures, and timeouts fall back to local Rust matches. The model cannot modify records or contact people.
+The model must support `/chat/completions`; see the [provider documentation](https://opencode.ai/docs/go/). Restart the server after changing `.env`. A role lookup sends bounded source excerpts. The server validates source IDs, exact quotations, and requirement coverage, then caches valid results. Invalid responses, provider failures, and timeouts fall back to local Rust matches. The model cannot modify records or contact people.
 
-**Live provider verification is pending a key.** Controlled-response tests cover the adapter's request format, caching, validation, and fallback.
+Run `npm run provider:check` after building to make one live request with the fictional Aisha/Product Engineer fixture, validate its quotations, and verify the second lookup uses the cache. This opt-in check consumes provider usage; normal tests use controlled responses. It prints only status metadata. A GLM-5.3 check on September 19, 2026 returned four valid citations in 3.9 seconds and passed the cache check. This is one observation, not a latency guarantee.
 
 ## Verification and limits
 
@@ -55,6 +55,7 @@ Rust tests cover exact passages, whole-word boundaries, normalization, determini
 This is a local development project. Demo accounts are shared. Email verification, password reset, malware scanning, OCR, pagination, and production deployment are outside the current implementation. Recaps and profiles are author supplied; a QR submission does not verify attendance. Literal word matches can miss synonyms or include negated claims. A citation identifies its source, not its truth.
 
 - [Scope](docs/product.md)
+- [Trust, encounter context, and existing tools](docs/trust-and-context.md)
 - [Architecture](docs/architecture.md)
 - [Interface and avatar credits](docs/design-system.md)
 - [Manual verification](docs/demo.md)

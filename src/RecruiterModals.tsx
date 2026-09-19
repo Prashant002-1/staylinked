@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, ExternalLink, Plus, RotateCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Check, Copy, Eye, Plus, RotateCw } from 'lucide-react';
 import { api, json } from './api';
 import { useAuth } from './session';
 import { Avatar, Choice, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
@@ -183,17 +184,15 @@ export function ShareQR({
               variant="outline"
               className="flex-1 h-9"
               render={
-                <a
-                  href={`/connect/${encodeURIComponent(activeEventId || '')}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label="Preview invitation in a new tab"
+                <Link
+                  to={`/connect/${encodeURIComponent(activeEventId || '')}`}
+                  aria-label="Preview invitation"
                 />
               }
               nativeButton={false}
             >
               Preview
-              <ExternalLink />
+              <Eye />
             </Button>
           </div>
           <Input

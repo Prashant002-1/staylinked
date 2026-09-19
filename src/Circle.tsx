@@ -50,6 +50,8 @@ export default function Circle() {
   const ownProfile = params.get('view') === 'profile';
   const personId = params.get('person');
   const requestVersion = useRef(0);
+  const refreshRequest = useRef<AbortController | null>(null);
+  const previousPerson = useRef(personId);
   const listScroll = useRef(0);
   const returnFocus = useRef('');
   const rows = useRef(new Map<string, HTMLButtonElement>());
@@ -79,9 +81,14 @@ export default function Circle() {
   }, [ownProfile, personId, Boolean(data)]);
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
+    refreshRequest.current?.abort();
+    const controller = new AbortController();
+    refreshRequest.current = controller;
     try {
-      const result = await api<Workspace>(recruiter ? '/workspace' : '/candidate');
-      if (version !== requestVersion.current) return;
+      const result = await api<Workspace>(recruiter ? '/workspace' : '/candidate', {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted || version !== requestVersion.current) return;
       setData({
         connections: result.connections,
         events: result.events || [],
@@ -89,7 +96,10 @@ export default function Circle() {
       });
       setError('');
     } catch (e) {
-      if (version === requestVersion.current) setError((e as Error).message);
+      if (!controller.signal.aborted && version === requestVersion.current)
+        setError((e as Error).message);
+    } finally {
+      if (refreshRequest.current === controller) refreshRequest.current = null;
     }
   }, [recruiter, user?.id]);
   useEffect(() => {
@@ -98,9 +108,17 @@ export default function Circle() {
     window.addEventListener('focus', refresh);
     return () => {
       requestVersion.current++;
+      refreshRequest.current?.abort();
+      refreshRequest.current = null;
       window.removeEventListener('focus', refresh);
     };
   }, [refresh]);
+  useEffect(() => {
+    const returnedToConnections =
+      previousPerson.current !== null && personId === null && !ownProfile;
+    previousPerson.current = personId;
+    if (returnedToConnections) void refresh();
+  }, [personId, ownProfile, refresh]);
   if (!user) return null;
   const home = () => setParams({});
   const person = data?.connections.find((c) => c.id === personId);
@@ -274,9 +292,11 @@ export default function Circle() {
                           if (value !== 'all') setSharingEvent(value);
                         }}
                       >
-                        <DropdownMenuRadioItem value="all">All events</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="all" closeOnClick>
+                          All events
+                        </DropdownMenuRadioItem>
                         {data.events.map((event) => (
-                          <DropdownMenuRadioItem key={event.id} value={event.id}>
+                          <DropdownMenuRadioItem key={event.id} value={event.id} closeOnClick>
                             {event.name}
                           </DropdownMenuRadioItem>
                         ))}
@@ -342,7 +362,10 @@ export default function Circle() {
         <ShareQR
           events={data.events}
           initialEvent={sharingEvent}
-          onClose={() => setModal(null)}
+          onClose={() => {
+            setModal(null);
+            if (recruiter) void refresh();
+          }}
           onNewEvent={() => setModal('event')}
           onEventChange={setSharingEvent}
         />

@@ -526,6 +526,18 @@
   color: var(--primary);
   margin-top: 8px;
 }
+.role-summary {
+  margin-top: 22px;
+}
+.role-summary > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.role-passages .finding-note {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.7;
+}
 .text-action {
   min-height: 40px;
   color: var(--primary);
