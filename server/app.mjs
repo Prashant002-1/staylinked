@@ -62,6 +62,41 @@ const stripPrivate = ({
   ...connection
 }) => connection;
 
+async function extractUpload(file) {
+  if (!file) return { error: 'Choose a file first.' };
+  const ext = extname(file.originalname).toLowerCase();
+  if (!['.pdf', '.txt', '.md'].includes(ext))
+    return { error: 'Please upload a PDF, TXT, or Markdown file.' };
+  let text = '';
+  let extraction = 'ready';
+  if (ext === '.pdf') {
+    if (file.buffer.subarray(0, 5).toString() !== '%PDF-')
+      return { error: 'This file is not a valid PDF.' };
+    try {
+      const { PDFParse } = await import('pdf-parse');
+      const parser = new PDFParse({ data: file.buffer });
+      try {
+        text = (await parser.getText({ first: 30 })).text;
+      } finally {
+        await parser.destroy();
+      }
+      if (!text.trim()) extraction = 'no-text';
+    } catch {
+      extraction = 'unavailable';
+    }
+  } else {
+    if (file.buffer.includes(0)) return { error: 'This does not look like a text document.' };
+    text = file.buffer.toString('utf8');
+  }
+  return {
+    ext,
+    title: file.originalname.slice(0, 180),
+    text: text.slice(0, 60000),
+    extraction,
+    size: file.size,
+  };
+}
+
 export function createApp(options = {}) {
   const dataDir = resolve(options.dataDir || process.env.DATA_DIR || 'data');
   mkdirSync(resolve(dataDir, 'uploads'), { recursive: true });
@@ -381,64 +416,88 @@ export function createApp(options = {}) {
     storage: multer.memoryStorage(),
     limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   });
+  const persistUpload = (file, extracted, candidateId, previous) => {
+    const { ext, ...content } = extracted;
+    const now = new Date().toISOString();
+    const material = {
+      ...(previous || { id: uid(), candidateId, type: 'file', createdAt: now }),
+      ...content,
+      ...(previous ? { updatedAt: now } : {}),
+      path: resolve(dataDir, 'uploads', `${uid()}${ext}`),
+    };
+    try {
+      // A replacement never writes over the currently shared file.
+      writeFileSync(material.path, file.buffer, { mode: 0o600, flag: 'wx' });
+      if (previous)
+        db.prepare('UPDATE materials SET data=? WHERE id=? AND candidate_id=?').run(
+          JSON.stringify(material),
+          material.id,
+          candidateId,
+        );
+      else
+        db.prepare('INSERT INTO materials VALUES (?,?,?)').run(
+          material.id,
+          candidateId,
+          JSON.stringify(material),
+        );
+    } catch (error) {
+      // Clean up partial writes as well as files whose database write failed.
+      if (error.code !== 'EEXIST') {
+        try {
+          unlinkSync(material.path);
+        } catch (cleanupError) {
+          if (cleanupError.code !== 'ENOENT')
+            console.error('Upload cleanup failed:', cleanupError.code);
+        }
+      }
+      throw error;
+    }
+    if (previous?.path) {
+      try {
+        unlinkSync(previous.path);
+      } catch (error) {
+        // The replacement has committed; a cleanup failure must not report it as unsaved.
+        if (error.code !== 'ENOENT') console.error('Obsolete upload cleanup failed:', error.code);
+      }
+    }
+    return material;
+  };
   app.post('/api/materials/upload', auth('candidate'), upload.single('file'), async (req, res) => {
     if (materialCount(req.user.id) >= 20)
       return res.status(400).json({ error: 'You can share up to 20 materials.' });
-    if (!req.file) return res.status(400).json({ error: 'Choose a file first.' });
-    const ext = extname(req.file.originalname).toLowerCase();
-    if (!['.pdf', '.txt', '.md'].includes(ext))
-      return res.status(400).json({ error: 'Please upload a PDF, TXT, or Markdown file.' });
-    let text = '';
-    let extraction = 'ready';
-    if (ext === '.pdf') {
-      if (req.file.buffer.subarray(0, 5).toString() !== '%PDF-')
-        return res.status(400).json({ error: 'This file is not a valid PDF.' });
-      try {
-        const { PDFParse } = await import('pdf-parse');
-        const parser = new PDFParse({ data: req.file.buffer });
-        try {
-          text = (await parser.getText({ first: 30 })).text;
-        } finally {
-          await parser.destroy();
-        }
-        if (!text.trim()) extraction = 'no-text';
-      } catch {
-        extraction = 'unavailable';
-      }
-    } else {
-      if (req.file.buffer.includes(0))
-        return res.status(400).json({ error: 'This does not look like a text document.' });
-      text = req.file.buffer.toString('utf8');
-    }
+    const extracted = await extractUpload(req.file);
+    if (extracted.error) return res.status(400).json({ error: extracted.error });
     // PDF extraction yields; another upload or note may have filled the last slot.
     if (materialCount(req.user.id) >= 20)
       return res.status(400).json({ error: 'You can share up to 20 materials.' });
-    const id = uid();
-    const path = resolve(dataDir, 'uploads', `${id}${ext}`);
-    writeFileSync(path, req.file.buffer, { mode: 0o600 });
-    const material = {
-      id,
-      candidateId: req.user.id,
-      title: req.file.originalname.slice(0, 180),
-      type: 'file',
-      text: text.slice(0, 60000),
-      path,
-      extraction,
-      size: req.file.size,
-      createdAt: new Date().toISOString(),
-    };
-    try {
-      db.prepare('INSERT INTO materials VALUES (?,?,?)').run(
-        id,
-        req.user.id,
-        JSON.stringify(material),
-      );
-    } catch (error) {
-      // A failed database write must not leave an unreferenced private document.
-      unlinkSync(path);
-      throw error;
-    }
+    const material = persistUpload(req.file, extracted, req.user.id);
     res.status(201).json({ material: safeMaterial(material) });
+  });
+  app.put('/api/materials/:id/file', auth('candidate'), upload.single('file'), async (req, res) => {
+    const row = db
+      .prepare('SELECT data FROM materials WHERE id=? AND candidate_id=?')
+      .get(req.params.id, req.user.id);
+    const existing = parse(row);
+    if (!existing) return res.status(404).json({ error: 'Material not found.' });
+    if (existing.type !== 'file')
+      return res.status(400).json({ error: 'Only uploaded files can be replaced.' });
+    const extracted = await extractUpload(req.file);
+    if (extracted.error) return res.status(400).json({ error: extracted.error });
+    if (extracted.extraction === 'unavailable')
+      return res
+        .status(400)
+        .json({ error: 'This PDF could not be read. Your previous file is unchanged.' });
+    const current = db
+      .prepare('SELECT data FROM materials WHERE id=? AND candidate_id=?')
+      .get(req.params.id, req.user.id);
+    if (!current) return res.status(404).json({ error: 'Material not found.' });
+    if (current.data !== row.data)
+      return res.status(409).json({
+        error: 'This file changed while uploading. Reload it before replacing it.',
+        code: 'MATERIAL_CHANGED',
+      });
+    const material = persistUpload(req.file, extracted, req.user.id, existing);
+    res.json({ material: safeMaterial(material) });
   });
   app.get('/api/materials/:id/download', auth(), (req, res, next) => {
     const material = parse(db.prepare('SELECT data FROM materials WHERE id=?').get(req.params.id));
@@ -466,9 +525,9 @@ export function createApp(options = {}) {
     );
     if (!existing) return res.status(404).json({ error: 'Material not found.' });
     if (existing.type !== 'note')
-      return res
-        .status(400)
-        .json({ error: 'Only notes can be edited. Upload a new file to replace a document.' });
+      return res.status(400).json({
+        error: 'Only notes can be edited here. Use Replace file for an uploaded document.',
+      });
     const material = {
       ...existing,
       ...noteSchema.parse(req.body),

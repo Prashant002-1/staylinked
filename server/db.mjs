@@ -75,8 +75,9 @@ export function seedDemo(db) {
       tags: ['React', 'TypeScript', 'Accessibility'],
       bio: 'I build interfaces that stay useful when the network does not. My final project at NYU was a shared trip planner with offline editing. I like the space between thoughtful interaction design and the messy details of getting software to work for people.',
       conversation:
-        'We talked about the offline trip planner I built with two friends, especially the edit conflicts when someone changes a plan on the subway. You said Northstar is working through similar questions around collaborative editing. I showed you the merge preview that lets people choose what to keep.',
-      highlight: 'The trip planner that still works on the subway',
+        'I showed Maya the Wayfinder merge preview at the NYU fair. She asked how I handle two people editing the same stop, because Northstar’s collaboration team faces similar conflicts. I walked through the choice between both versions and said I would send her a short screen recording and the conflict tests.',
+      highlight:
+        'Maya asked how I handle conflicting trip edits; I offered to send her the Wayfinder merge preview.',
       interest: 'Frontend and product engineering',
       materialTitle: 'Wayfinder · building an offline trip planner',
       materialText:
@@ -217,6 +218,7 @@ export function seedDemo(db) {
         updatedAt: c.date,
       };
       userInsert.run(c.id, c.email, password, 'candidate', JSON.stringify(profile));
+      if (c.id === 'aisha-demo') seedAishaConnections(db);
       const event = c.date.startsWith('2026-08') ? events[1] : events[0];
       const connection = {
         id: `connection-${c.id}`,
@@ -261,5 +263,153 @@ export function seedDemo(db) {
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
+  }
+}
+
+// Fictional people and encounters for the sample applicant's private circle.
+// Existing records are retained; callers can include this in their seed transaction.
+export function seedAishaConnections(db) {
+  if (!db.prepare('SELECT id FROM users WHERE id=?').get('aisha-demo')) return;
+  const contacts = [
+    {
+      id: 'elena-morris-sample',
+      name: 'Elena Morris',
+      company: 'Meridian Studio',
+      email: 'elena.morris@example.com',
+      headline: 'Hiring engineers who care about design',
+      bio: 'I help a small design and engineering studio build its product team. I enjoy talking through the choices behind an interface, especially the details that make it easier to use.',
+      tags: ['Product engineering', 'Interaction design'],
+      eventId: 'nyu-product-builders-night',
+      eventName: 'NYU Product Builders Night',
+      location: 'NYU Tandon School of Engineering, Brooklyn',
+      date: '2026-09-16T18:30:00.000Z',
+      conversation:
+        'I showed Elena the Wayfinder merge preview at NYU Tandon. She asked why I show both edits rather than automatically keeping the newest one. Meridian Studio is looking for engineers who can explain product decisions. I offered to send my decision notes and a recording of the two versions side by side; she said that would be useful.',
+      highlight:
+        'Elena asked why I show both edits before replacing an itinerary; I offered to send the decision notes.',
+      interest: 'Product engineering and interaction design',
+    },
+    {
+      id: 'owen-brooks-sample',
+      name: 'Owen Brooks',
+      company: 'Fieldwork Systems',
+      email: 'owen.brooks@example.com',
+      headline: 'Building tools for teams away from a desk',
+      bio: 'I recruit for a team building scheduling and fieldwork software. I look for people who can explain how their work behaves when connectivity is unreliable and plans change.',
+      tags: ['Web applications', 'Offline tools'],
+      eventId: 'brooklyn-developer-meetup',
+      eventName: 'Brooklyn Developer Meetup',
+      location: 'Brooklyn Navy Yard, Brooklyn',
+      date: '2026-09-12T17:20:00.000Z',
+      conversation:
+        'I showed Owen how Wayfinder keeps edits in IndexedDB until the network returns. His team at Fieldwork Systems needs forms that work when staff lose reception. He asked what happens if a save succeeds but its response never arrives. I walked through my retry test and offered to share it; he said he would show it to their frontend lead.',
+      highlight:
+        'Owen’s field team needs offline forms; I offered to share the retry tests I wrote for Wayfinder.',
+      interest: 'Reliable frontend systems',
+    },
+    {
+      id: 'nina-kapoor-sample',
+      name: 'Nina Kapoor',
+      company: 'Beacon Care Tools',
+      email: 'nina.kapoor@example.com',
+      headline: 'Connecting thoughtful builders with care teams',
+      bio: 'I help hire the engineers and designers behind tools for care coordinators. Clear interfaces, accessible workflows, and listening closely to people matter to our team.',
+      tags: ['Accessibility', 'Frontend engineering'],
+      eventId: 'nyc-accessibility-evening',
+      eventName: 'NYC Accessibility Evening',
+      location: 'Stavros Niarchos Foundation Library, Manhattan',
+      date: '2026-09-09T18:10:00.000Z',
+      conversation:
+        'I asked Nina to try Wayfinder without a mouse after the library talk. She noticed the focus movement when closing a conflict and asked how I tested it. Beacon Care Tools is improving keyboard access for care coordinators. I agreed to send a short walkthrough showing the focus order and the keyboard tests so she could share it with their designer.',
+      highlight:
+        'Nina tried the keyboard flow and asked where focus goes after a conflict; I will send the walkthrough.',
+      interest: 'Accessible frontend engineering',
+    },
+    {
+      id: 'lucas-reed-sample',
+      name: 'Lucas Reed',
+      company: 'Civic Atlas',
+      email: 'lucas.reed@example.com',
+      headline: 'Helping civic technology teams grow',
+      bio: 'I work with a small team making public-service information easier to navigate. I enjoy meeting builders who test their assumptions with people and document what they learn.',
+      tags: ['Civic technology', 'Product teams'],
+      eventId: 'nyc-civic-builders',
+      eventName: 'NYC Civic Builders Meetup',
+      location: 'Civic Hall, Manhattan',
+      date: '2026-09-03T17:45:00.000Z',
+      conversation:
+        'I told Lucas about the weekend when five classmates used Wayfinder on a trip. He asked what I changed after watching them use it, so I showed how I replaced an unclear sync icon with a written status. Civic Atlas wants engineers who test assumptions with people. I offered to send the before-and-after notes, and he said he would share them with the product team. I was clear that this was a student prototype.',
+      highlight:
+        'Lucas asked what changed after five classmates tried Wayfinder; I offered to send my before-and-after notes.',
+      interest: 'Product engineering for public services',
+    },
+  ];
+  const password = hashPassword(randomBytes(32).toString('hex'));
+  for (const contact of contacts) {
+    const person = {
+      id: contact.id,
+      kind: 'recruiter',
+      name: contact.name,
+      company: contact.company,
+      email: contact.email,
+      headline: contact.headline,
+      bio: contact.bio,
+      location: 'New York, NY',
+      tags: contact.tags,
+      links: [],
+    };
+    const existing = db.prepare('SELECT email,kind FROM users WHERE id=?').get(person.id);
+    if (existing && (existing.email !== person.email || existing.kind !== 'recruiter'))
+      throw new Error('Sample contact identity conflicts with an existing account');
+    if (!existing)
+      db.prepare('INSERT INTO users VALUES (?,?,?,?,?)').run(
+        person.id,
+        person.email,
+        password,
+        person.kind,
+        JSON.stringify(person),
+      );
+    const event = {
+      id: contact.eventId,
+      recruiterId: person.id,
+      name: contact.eventName,
+      location: contact.location,
+      date: contact.date.slice(0, 10),
+      prompt: 'What did we talk about? Share the detail you would like me to remember.',
+    };
+    const existingEvent = db.prepare('SELECT recruiter_id FROM events WHERE id=?').get(event.id);
+    if (existingEvent && existingEvent.recruiter_id !== person.id)
+      throw new Error('Sample event conflicts with an existing event');
+    if (!existingEvent)
+      db.prepare('INSERT INTO events VALUES (?,?,?)').run(
+        event.id,
+        person.id,
+        JSON.stringify(event),
+      );
+    if (
+      db
+        .prepare('SELECT id FROM connections WHERE candidate_id=? AND event_id=?')
+        .get('aisha-demo', event.id)
+    )
+      continue;
+    const connection = {
+      id: `connection-aisha-${person.id}`,
+      candidateId: 'aisha-demo',
+      recruiterId: person.id,
+      eventId: event.id,
+      conversation: contact.conversation,
+      originalConversation: contact.conversation,
+      highlight: contact.highlight,
+      interest: contact.interest,
+      createdAt: contact.date,
+      updatedAt: contact.date,
+    };
+    db.prepare('INSERT INTO connections VALUES (?,?,?,?,?)').run(
+      connection.id,
+      connection.candidateId,
+      person.id,
+      event.id,
+      JSON.stringify(connection),
+    );
   }
 }

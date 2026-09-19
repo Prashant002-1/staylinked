@@ -385,6 +385,8 @@ function NoteEditor({
 
 export function Profile({ user, onUpdate }: { user: User; onUpdate: (user: User) => void }) {
   const input = useRef<HTMLInputElement>(null);
+  const replacement = useRef<Material | undefined>(undefined);
+  const [replacingFile, setReplacingFile] = useState(false);
   const workHeading = useRef<HTMLHeadingElement>(null);
   const materialRows = useRef(new Map<string, HTMLButtonElement>());
   const read = useRef<AbortController | null>(null);
@@ -430,7 +432,7 @@ export function Profile({ user, onUpdate }: { user: User; onUpdate: (user: User)
     );
     requestAnimationFrame(() => materialRows.current.get(material.id)?.focus());
   };
-  const upload = (file?: File) => {
+  const upload = (file?: File, previous?: Material) => {
     if (!file || action.busy) return;
     if (!/\.(pdf|txt|md)$/i.test(file.name)) {
       action.setError('Choose a PDF, TXT, or Markdown file.');
@@ -442,12 +444,13 @@ export function Profile({ user, onUpdate }: { user: User; onUpdate: (user: User)
     }
     const body = new FormData();
     body.append('file', file);
+    setReplacingFile(Boolean(previous));
     void action.run<{ material: Material }>(
-      '/materials/upload',
-      { method: 'POST', body },
+      previous ? `/materials/${previous.id}/file` : '/materials/upload',
+      { method: previous ? 'PUT' : 'POST', body },
       ({ material }) => {
         savedMaterial(material);
-        toast.success('File added');
+        toast.success(previous ? 'File replaced' : 'File added');
       },
     );
   };
@@ -502,10 +505,17 @@ export function Profile({ user, onUpdate }: { user: User; onUpdate: (user: User)
                 variant="outline"
                 size="sm"
                 disabled={cannotAdd}
-                onClick={() => input.current?.click()}
+                onClick={() => {
+                  replacement.current = undefined;
+                  input.current?.click();
+                }}
               >
                 {action.busy && !removing ? <Loader2 className="animate-spin" /> : <Upload />}
-                {action.busy && !removing ? 'Uploading…' : 'Upload file'}
+                {action.busy && !removing
+                  ? replacingFile
+                    ? 'Replacing…'
+                    : 'Uploading…'
+                  : 'Upload file'}
               </Button>
             </div>
             <input
@@ -513,10 +523,13 @@ export function Profile({ user, onUpdate }: { user: User; onUpdate: (user: User)
               type="file"
               accept=".pdf,.txt,.md"
               className="sr-only"
-              aria-label="Upload work"
-              disabled={cannotAdd}
+              aria-hidden="true"
+              tabIndex={-1}
+              disabled={action.busy || !materials}
               onChange={(event) => {
-                upload(event.target.files?.[0]);
+                const previous = replacement.current;
+                replacement.current = undefined;
+                upload(event.target.files?.[0], previous);
                 event.target.value = '';
               }}
             />
@@ -576,18 +589,29 @@ export function Profile({ user, onUpdate }: { user: User; onUpdate: (user: User)
                     </DropdownMenuItem>
                   )}
                   {material.type === 'file' && (
-                    <DropdownMenuItem
-                      disabled={fileDownload.busy}
-                      onClick={() =>
-                        void fileDownload.download(
-                          `/materials/${material.id}/download`,
-                          material.title,
-                        )
-                      }
-                    >
-                      <Download />
-                      Download
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          replacement.current = material;
+                          input.current?.click();
+                        }}
+                      >
+                        <RefreshCw />
+                        Replace file
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={fileDownload.busy}
+                        onClick={() =>
+                          void fileDownload.download(
+                            `/materials/${material.id}/download`,
+                            material.title,
+                          )
+                        }
+                      >
+                        <Download />
+                        Download
+                      </DropdownMenuItem>
+                    </>
                   )}
                   <DropdownMenuItem
                     variant="destructive"

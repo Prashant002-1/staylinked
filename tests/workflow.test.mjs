@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readdirSync, unlinkSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  readdirSync,
+  unlinkSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -910,7 +918,8 @@ test('stale browser identity cannot read or mutate the newly signed-in account',
     body: { kind: 'candidate' },
     headers: staleHeaders,
   });
-  const before = (await browser('/candidate')).data.profile;
+  const beforeState = (await browser('/candidate')).data;
+  const before = beforeState.profile;
   const staleSave = await browser('/profile', {
     method: 'PUT',
     headers: staleHeaders,
@@ -936,7 +945,7 @@ test('stale browser identity cannot read or mutate the newly signed-in account',
     },
   });
   assert.equal(staleConnect.status, 409);
-  assert.equal((await browser('/candidate')).data.connections.length, 1);
+  assert.deepEqual((await browser('/candidate')).data.connections, beforeState.connections);
   const actualSession = await browser('/session', { headers: staleHeaders });
   assert.equal(actualSession.status, 200);
   assert.equal(actualSession.data.user.id, 'aisha-demo');
@@ -1441,6 +1450,355 @@ test(
     assert.equal(calls, 2);
     const cached = await lookup();
     assert.equal(cached.data.brief.cached, true);
+    assert.equal(calls, 2);
+  },
+);
+
+function uploadBody(content, filename = 'project.txt') {
+  const body = new FormData();
+  body.append('file', new Blob([content]), filename);
+  return body;
+}
+
+test('file replacement preserves identity, works at the cap, and remains private', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const candidate = f.client(),
+    recruiter = f.client(),
+    stranger = f.client(),
+    anonymous = f.client();
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  await stranger('/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'Another Candidate',
+      email: 'replacement-stranger@test.example',
+      password: 'temporary-test-pass',
+    },
+  });
+  const originalText = 'Original React interface project notes.';
+  const uploaded = await candidate('/materials/upload', {
+    method: 'POST',
+    body: uploadBody(originalText, 'first-project.txt'),
+  });
+  assert.equal(uploaded.status, 201);
+  const original = uploaded.data.material;
+  const oldRecord = JSON.parse(
+    f.db.prepare('SELECT data FROM materials WHERE id=?').get(original.id).data,
+  );
+  for (const [client, status] of [
+    [anonymous, 401],
+    [recruiter, 403],
+    [stranger, 404],
+  ])
+    assert.equal(
+      (
+        await client(`/materials/${original.id}/file`, {
+          method: 'PUT',
+          body: uploadBody('Someone else must not replace this work.'),
+        })
+      ).status,
+      status,
+    );
+  assert.equal(
+    (
+      await candidate('/materials/material-aisha-demo/file', {
+        method: 'PUT',
+        body: uploadBody('A note must remain an editable note.'),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await candidate('/materials/missing-material/file', {
+        method: 'PUT',
+        body: uploadBody('No record exists for this file.'),
+      })
+    ).status,
+    404,
+  );
+  for (let i = 0; i < 18; i++) {
+    const material = {
+      id: `replacement-cap-${i}`,
+      candidateId: 'aisha-demo',
+      title: `Note ${i}`,
+      text: 'A useful project note to fill the material cap.',
+      type: 'note',
+      createdAt: original.createdAt,
+    };
+    f.db
+      .prepare('INSERT INTO materials VALUES (?,?,?)')
+      .run(material.id, material.candidateId, JSON.stringify(material));
+  }
+  const newText =
+    '# Updated project\nI built a Go API with PostgreSQL and wrote integration tests.';
+  const replaced = await candidate(`/materials/${original.id}/file`, {
+    method: 'PUT',
+    body: uploadBody(newText, 'updated-project.md'),
+  });
+  assert.equal(replaced.status, 200);
+  const material = replaced.data.material;
+  assert.equal(material.id, original.id);
+  assert.equal(material.createdAt, original.createdAt);
+  assert.ok(material.updatedAt);
+  assert.equal(material.title, 'updated-project.md');
+  assert.equal(material.text, newText);
+  assert.equal(material.size, Buffer.byteLength(newText));
+  assert.equal(material.path, undefined);
+  const view = (await candidate('/candidate')).data.materials;
+  assert.equal(view.length, 20);
+  assert.equal(view.filter((item) => item.id === original.id).length, 1);
+  assert.equal(existsSync(oldRecord.path), false);
+  assert.equal(readdirSync(join(f.dataDir, 'uploads')).length, 1);
+  assert.equal((await candidate(`/materials/${original.id}/download`)).data, newText);
+  const shared = await recruiter(`/materials/${original.id}/download`);
+  assert.equal(shared.status, 200);
+  assert.equal(shared.data, newText);
+  assert.match(shared.headers.get('content-disposition'), /updated-project\.md/);
+  assert.equal((await stranger(`/materials/${original.id}/download`)).status, 404);
+  assert.equal((await anonymous(`/materials/${original.id}/download`)).status, 401);
+  const pdf = await candidate(`/materials/${original.id}/file`, {
+    method: 'PUT',
+    body: uploadBody(
+      textPdf('Updated PDF project: I built a React interface with keyboard navigation.'),
+      'updated-project.pdf',
+    ),
+  });
+  assert.equal(pdf.status, 200);
+  assert.equal(pdf.data.material.extraction, 'ready');
+  assert.match(pdf.data.material.text, /keyboard navigation/);
+  assert.equal(pdf.data.material.createdAt, original.createdAt);
+  assert.equal(readdirSync(join(f.dataDir, 'uploads')).length, 1);
+});
+
+test('replacement validation, extraction, and persistence failures preserve the existing file', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const candidate = f.client();
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  const originalText = 'Keep this original project document until replacement succeeds.';
+  const uploaded = await candidate('/materials/upload', {
+    method: 'POST',
+    body: uploadBody(originalText, 'original.txt'),
+  });
+  const id = uploaded.data.material.id;
+  const stored = f.db.prepare('SELECT data FROM materials WHERE id=?').get(id).data;
+  const path = JSON.parse(stored).path;
+  const assertOriginal = () => {
+    assert.equal(f.db.prepare('SELECT data FROM materials WHERE id=?').get(id).data, stored);
+    assert.equal(readFileSync(path, 'utf8'), originalText);
+    assert.equal(readdirSync(join(f.dataDir, 'uploads')).length, 1);
+  };
+  const invalid = [
+    new FormData(),
+    uploadBody('<html>wrong file type</html>', 'not-a-document.html'),
+    uploadBody(Buffer.from([1, 0, 2]), 'binary.txt'),
+    uploadBody('not a PDF', 'invalid.pdf'),
+    uploadBody('%PDF-1.7\nThis PDF has no readable objects.', 'broken.pdf'),
+    uploadBody(Buffer.alloc(8 * 1024 * 1024 + 1, 65), 'too-large.txt'),
+  ];
+  for (const body of invalid) {
+    assert.equal((await candidate(`/materials/${id}/file`, { method: 'PUT', body })).status, 400);
+    assertOriginal();
+  }
+  const uploads = join(f.dataDir, 'uploads'),
+    heldUploads = join(f.dataDir, 'uploads-held');
+  renameSync(uploads, heldUploads);
+  try {
+    assert.equal(
+      (
+        await candidate(`/materials/${id}/file`, {
+          method: 'PUT',
+          body: uploadBody('Replacement must fail when storage is unavailable.'),
+        })
+      ).status,
+      500,
+    );
+  } finally {
+    renameSync(heldUploads, uploads);
+  }
+  assertOriginal();
+  f.db.exec(
+    "CREATE TRIGGER reject_replacement BEFORE UPDATE ON materials BEGIN SELECT RAISE(FAIL, 'Forced replacement test failure'); END;",
+  );
+  try {
+    assert.equal(
+      (
+        await candidate(`/materials/${id}/file`, {
+          method: 'PUT',
+          body: uploadBody('Replacement must fail when its database write fails.'),
+        })
+      ).status,
+      500,
+    );
+  } finally {
+    f.db.exec('DROP TRIGGER reject_replacement');
+  }
+  assertOriginal();
+  assert.equal((await candidate(`/materials/${id}/download`)).data, originalText);
+});
+
+test(
+  'a pending file replacement cannot overwrite a newer file or resurrect a deleted material',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture();
+    let parsing, release;
+    t.after(() => {
+      release?.();
+      return f.cleanup();
+    });
+    const { PDFParse } = await import('pdf-parse');
+    const getText = PDFParse.prototype.getText;
+    t.mock.method(PDFParse.prototype, 'getText', async function (...args) {
+      const result = await getText.apply(this, args);
+      parsing.resolve();
+      await parsing.finish;
+      return result;
+    });
+    const candidate = f.client();
+    await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+    for (const action of ['replace', 'delete']) {
+      const uploaded = await candidate('/materials/upload', {
+        method: 'POST',
+        body: uploadBody('Original project file before a concurrent edit.'),
+      });
+      const id = uploaded.data.material.id;
+      let started;
+      const ready = new Promise((resolve) => {
+        started = resolve;
+      });
+      parsing = {
+        resolve: started,
+        finish: new Promise((resolve) => {
+          release = resolve;
+        }),
+      };
+      const pending = candidate(`/materials/${id}/file`, {
+        method: 'PUT',
+        body: uploadBody(
+          textPdf('Older PDF replacement which is still extracting.'),
+          'pending.pdf',
+        ),
+      });
+      await ready;
+      if (action === 'replace') {
+        const newer = await candidate(`/materials/${id}/file`, {
+          method: 'PUT',
+          body: uploadBody('The latest successful replacement must remain.', 'latest.txt'),
+        });
+        assert.equal(newer.status, 200);
+      } else {
+        assert.equal((await candidate(`/materials/${id}`, { method: 'DELETE' })).status, 200);
+      }
+      release();
+      const stale = await pending;
+      if (action === 'replace') {
+        assert.equal(stale.status, 409);
+        assert.equal(stale.data.code, 'MATERIAL_CHANGED');
+        assert.equal(
+          (await candidate(`/materials/${id}/download`)).data,
+          'The latest successful replacement must remain.',
+        );
+      } else {
+        assert.equal(stale.status, 404);
+        assert.equal(f.db.prepare('SELECT id FROM materials WHERE id=?').get(id), undefined);
+        assert.equal((await candidate(`/materials/${id}/download`)).status, 404);
+      }
+      assert.equal(readdirSync(join(f.dataDir, 'uploads')).length, 1);
+    }
+  },
+);
+
+test(
+  'replacing a file invalidates its pending and cached role context',
+  { timeout: 10000 },
+  async (t) => {
+    let started,
+      finishProvider,
+      calls = 0;
+    const providerStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    const finish = new Promise((resolve) => {
+      finishProvider = resolve;
+    });
+    const suppliedTexts = [];
+    const f = await fixture({
+      aiConfig: {
+        apiKey: 'test-only-key',
+        baseUrl: 'https://provider.example/v1',
+        model: 'test-model',
+      },
+      fetchImpl: async (_url, options) => {
+        calls++;
+        const { role, sources } = JSON.parse(JSON.parse(options.body).messages[1].content);
+        suppliedTexts.push(sources.map((source) => source.text).join('\n'));
+        if (calls === 1) {
+          started();
+          await finish;
+        }
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summary: 'Candidate supplied project notes.',
+                  findings: role.requirements.map((requirement) => ({
+                    requirement,
+                    sourceId: null,
+                    quote: null,
+                    note: 'No passage selected.',
+                  })),
+                }),
+              },
+            },
+          ],
+        });
+      },
+    });
+    t.after(() => {
+      finishProvider();
+      return f.cleanup();
+    });
+    const recruiter = f.client(),
+      candidate = f.client();
+    await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+    await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+    const uploaded = await candidate('/materials/upload', {
+      method: 'POST',
+      body: uploadBody('Original React project with no keyboard testing yet.'),
+    });
+    const id = uploaded.data.material.id;
+    const lookup = () =>
+      recruiter('/workspace/connections/connection-aisha-demo/brief', {
+        method: 'POST',
+        body: { roleId: 'product-engineer' },
+      });
+    const pending = lookup();
+    await providerStarted;
+    const replaced = await candidate(`/materials/${id}/file`, {
+      method: 'PUT',
+      body: uploadBody('Replacement React project with automated keyboard tests.'),
+    });
+    assert.equal(replaced.status, 200);
+    finishProvider();
+    const stale = await pending;
+    assert.equal(stale.status, 409);
+    assert.equal(stale.data.code, 'SOURCES_CHANGED');
+    assert.equal(stale.data.sources, undefined);
+    const fresh = await lookup();
+    assert.equal(fresh.status, 200);
+    assert.equal(calls, 2);
+    assert.match(suppliedTexts[1], /Replacement React project/);
+    assert.doesNotMatch(suppliedTexts[1], /Original React project/);
+    assert.equal(
+      fresh.data.sources.find((source) => source.id === id).text,
+      replaced.data.material.text,
+    );
+    assert.equal((await lookup()).data.brief.cached, true);
     assert.equal(calls, 2);
   },
 );

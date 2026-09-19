@@ -8,7 +8,7 @@ The JSON client applies a 30-second deadline through response-body reading. A ca
 
 SQLite stores JSON records alongside indexed ownership columns: users, recruiter-owned events and roles, candidate-owned materials, candidate/event connections, and a cache of validated role summaries. A connection retains the original and current recap, memorable detail, interest, and timestamps. This storage model keeps iteration small; pagination and more structured querying remain future work.
 
-Both account types can edit their own profile. Candidates can edit note titles and text. Uploaded documents are replaced by uploading a new file and deleting the old one. Files live outside the public static directory, with authorization checked on each download.
+Both account types can edit their own profile. Candidates can edit note titles and text or replace an uploaded document in place. Replacement preserves the material ID and original creation date, records an updated date, and changes the inputs used for role context. Validation, extraction, and persistence failures leave the previous document intact; overlapping changes are rejected before saving. The obsolete file is removed only after its replacement is stored. Files live outside the public static directory, with authorization checked on each download.
 
 ## Access
 

@@ -52,7 +52,7 @@ export default function Entry() {
                       {kind === 'recruiter' ? 'Maya Chen' : 'Aisha Patel'}
                     </strong>
                     <span className="text-xs text-muted-foreground">
-                      {kind === 'recruiter' ? 'Recruiter demo' : 'Applicant demo'}
+                      {kind === 'recruiter' ? 'Recruiter workspace' : 'Applicant workspace'}
                     </span>
                   </span>
                   {busy === kind ? <Loader2 className="animate-spin" /> : <ArrowRight />}
@@ -72,7 +72,7 @@ export default function Entry() {
             />
             {auth.demoMode && (
               <Button variant="ghost" className="w-full mt-4" onClick={() => setMode('demo')}>
-                Back to demo
+                Choose a workspace
               </Button>
             )}
           </>

@@ -192,7 +192,10 @@ export default function ConnectionPanel({
                     <span>
                       <strong>{m.title}</strong>
                       <p>{m.text || 'Open the original file'}</p>
-                      <small>{date(m.updatedAt || m.createdAt)}</small>
+                      <small>
+                        {m.updatedAt ? 'Updated ' : ''}
+                        {date(m.updatedAt || m.createdAt)}
+                      </small>
                     </span>
                     <ChevronRight size={16} />
                   </button>
