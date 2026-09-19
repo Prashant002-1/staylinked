@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { ArrowUpRight, RotateCw, Loader2, Inbox, AlertCircle, UserRound } from 'lucide-react';
+import type { ReactNode, RefObject } from 'react';
+import { ArrowUpRight, Loader2, Inbox, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,12 +13,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+export { Loading, ErrorMessage } from './feedback';
 export function Brand() {
   return (
     <Link to="/" className="brand" aria-label="Staylinked home">
-      <span className="brand-mark">
-        <RotateCw size={18} strokeWidth={2.4} />
-      </span>
+      <span className="brand-mark" aria-hidden="true" />
       Staylinked
     </Link>
   );
@@ -40,7 +39,7 @@ export function Avatar({
     <AvatarRoot
       className={cn(
         'person-avatar rounded-full',
-        size === 'small' ? 'size-8' : size === 'large' ? 'size-20' : 'size-10',
+        size === 'small' ? 'size-8' : size === 'large' ? 'size-16' : 'size-10',
       )}
     >
       <AvatarImage src={avatarUrl(name)} alt="" className="rounded-[inherit]" />
@@ -55,52 +54,37 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  busy = false,
+  initialFocus,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  busy?: boolean;
+  initialFocus?: RefObject<HTMLElement | null>;
 }) {
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !busy) onClose();
       }}
     >
       <DialogContent
-        className={cn(
-          'max-h-[90dvh] overflow-y-auto p-6 gap-5',
-          wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
-        )}
+        className={cn('app-dialog max-h-[90dvh]', wide ? 'sm:max-w-2xl' : 'sm:max-w-lg')}
         aria-describedby={undefined}
+        aria-busy={busy}
+        showCloseButton={!busy}
+        initialFocus={initialFocus}
       >
-        <DialogHeader>
+        <DialogHeader className="app-dialog-header">
           <DialogTitle className="text-lg font-semibold pr-6">{title}</DialogTitle>
         </DialogHeader>
-        {children}
+        <div className="app-dialog-body">{children}</div>
       </DialogContent>
     </Dialog>
   );
-}
-export function Loading({ text = 'Loading…' }: { text?: string }) {
-  return (
-    <div
-      className="flex items-center justify-center gap-2 p-12 text-sm text-muted-foreground"
-      role="status"
-    >
-      <Loader2 className="size-4 animate-spin" />
-      {text}
-    </div>
-  );
-}
-export function ErrorMessage({ message }: { message?: string }) {
-  return message ? (
-    <div className="error-message" role="alert">
-      <AlertCircle className="size-4 shrink-0" />
-      {message}
-    </div>
-  ) : null;
 }
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (

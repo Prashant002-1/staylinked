@@ -1,31 +1,29 @@
 # Staylinked
 
-HR hackathon submission exploring how people keep in touch after meeting in person.
+HR hackathon submission exploring how people retain context after meeting in person.
 
-At a career fair, someone might remember a conversation about a particular project but lose that context a few weeks later. `Staylinked` keeps the encounter alongside the person's work and a direct conversation. It is a private circle of people who have connected, with no public profiles or discovery feed.
+A recruiter shares an event QR. The candidate records what they discussed and adds work to their profile. Both people can revisit the encounter later, see the connected person's profile, and reach out through email, LinkedIn, or a website. Candidates can edit their recap, profile, and project notes, or replace uploaded files. The original recap is preserved.
 
-## What I built
+Candidates can read an invitation QR in the browser using a camera or an image, review the recruiter and event, then continue to the connection form.
 
-- **A short QR introduction.** A recruiter shares an event QR. The candidate records what they discussed and the detail worth remembering, without asking the recruiter to write another note.
-- **A lasting connection.** Both people can exchange messages and share updates with their connections. Profiles and project notes can be edited; files can be replaced as someone's work changes.
-- **The original encounter.** An edited recap preserves the original submission, so the first conversation is still available later.
-- **Source passages for a role.** A small Rust program finds exact passages containing words from role requirements. It returns the source text, without ranking people or assigning confidence scores.
-- **Access tied to the relationship.** Private routes check the session and connection. Removing a connection revokes access through it; a second connection between the same people can still grant access.
+## Implementation
 
-These are implementation choices, not measured claims about hiring outcomes or time saved. Profiles and recaps are author supplied; a QR submission does not verify that a meeting occurred.
+React and TypeScript provide the interface, using shadcn/ui on Base UI, Geist, and Tailwind. Express handles cookie sessions, access checks, QR creation, PDF/text extraction, and private files. SQLite stores profiles, encounters, materials, and role definitions.
+
+An optional role lookup passes candidate-supplied text to a small Rust executable. It compares whole words and returns exact source passages. Node invokes it without a shell, limits input and output, applies a timeout, and validates quotations. There is no vector database or retrieval service. The Rust boundary is an exercise in Serde, borrowing, error handling, and integration between languages; no speed advantage over JavaScript has been measured.
+
+Profiles and materials are available through authenticated connections. Either person can remove a connection. Another encounter between the same pair may continue to grant access. There are no public profile or discovery routes.
 
 ## Run locally
 
-Requires **Node.js 24+**, npm, and a **stable Rust toolchain** with Cargo. Install Rust using [rustup](https://rustup.rs/).
+Requires **Node.js 24+**, npm, and a stable [Rust toolchain](https://rustup.rs/) with Cargo.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open [localhost:5173](http://localhost:5173). The entry page offers recruiter and candidate access with fictional data. Use separate browsers or a phone for independent sessions. Switching accounts in one browser replaces that browser's session.
-
-No model API key is required. SQLite records persist in `data/again.sqlite`; uploads stay in `data/uploads/`. These paths and `.env` are ignored by Git. Set `DATA_DIR` for a separate local instance.
+Open [localhost:5173](http://localhost:5173). Recruiter and candidate demo accounts use fictional data. Use separate browsers for independent sessions; switching accounts replaces the current browser session.
 
 ```sh
 npm run build   # Rust release binary + TypeScript + Vite
@@ -34,27 +32,11 @@ npm run check   # build, Rust tests/fmt/Clippy, HTTP workflow tests
 npm run format:check
 ```
 
-## How it is built
+No model key is required. Records persist in `data/again.sqlite`, with files in `data/uploads/`. These paths and `.env` are ignored by Git. Set `DATA_DIR` for a separate instance. `DEMO_MODE=false` disables demo access and seed creation for a new database without erasing existing records.
 
-```text
-React + TypeScript
-  shadcn/ui / Base UI, Geist, Tailwind
-          │ same-origin requests + session cookie
-Express + SQLite + private local files
-          ├── PDF / text extraction
-          ├── Rust passage lookup (JSON stdin/stdout)
-          └── optional OpenCode Go summary
-```
+## Optional model adapter
 
-Express owns authentication, access checks, persistence, QR creation, uploads, updates, and messages. Rust has one bounded job: tokenize source text, compare whole words with requirements, and return exact passages. Node starts the binary asynchronously without a shell, limits its input and output, applies a timeout, and validates its quotations.
-
-There is no embedding model, vector database, retrieval service, or index. There is also no performance claim over JavaScript. Rust provides a small processing boundary for practicing Serde, borrowing, error handling, and integration between languages.
-
-The interface uses People and Updates instead of a recruiting dashboard. There are no status queues, bookmarks, public follower counts, or automated outreach. Candidate and recruiter use the same relationship model; role lookup and event sharing remain available where needed.
-
-## Optional OpenCode Go
-
-The adapter uses OpenCode Go's OpenAI-compatible **Chat Completions** endpoint. Copy `.env.example` to `.env`, set server-only values, and restart:
+The OpenCode Go adapter uses an OpenAI-compatible Chat Completions endpoint. Copy `.env.example` to `.env` and configure the server:
 
 ```dotenv
 OPENCODE_API_KEY=your-key-here
@@ -62,23 +44,17 @@ OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1
 OPENCODE_MODEL=glm-5.2
 ```
 
-An OpenAI key is not needed. The configured model must support `/chat/completions`; see the [OpenCode Go documentation](https://opencode.ai/v2/docs/console/go).
+The model must support `/chat/completions`; see the [provider documentation](https://opencode.ai/v2/docs/console/go). A role lookup sends bounded source excerpts. The server validates source IDs, exact quotations, and requirement coverage, then caches valid results. Invalid responses, provider failures, and timeouts fall back to local Rust matches. The model cannot modify records or contact people.
 
-When configured, a role lookup sends bounded excerpts from that person's supplied work to the provider: at most 40,000 source characters, with 4,500 per source. Source IDs, exact quotations, and requirement coverage are validated before display. The cache includes the role, materials, recap, model, and endpoint. Invalid output, provider failure, or a 25-second timeout returns local matches. The model cannot send messages or modify records.
+**Live provider verification is pending a key.** Controlled-response tests cover the adapter's request format, caching, validation, and fallback.
 
-**Live provider verification is pending a key.** Controlled-response tests cover request shape, caching, malformed output, unsupported citations, and failure behavior.
+## Verification and limits
 
-## Tests and limits
+Rust tests cover exact passages, whole-word boundaries, normalization, deterministic ties, negation, and input limits. HTTP tests use isolated databases and upload directories to cover sessions, QR destinations, persistence, ownership, file access, access revocation, role lookup, and the provider adapter. Client tests cover account changes, request deadlines, cancellation, and malformed responses using controlled fetches and clocks.
 
-Rust tests cover exact Unicode passages, whole-word boundaries, limited word normalization, deterministic ties, negation preservation, and input limits. HTTP tests use isolated SQLite databases and upload directories to exercise authentication, QR destinations, persistence, files, connection access, private updates and messages, and the provider adapter.
+This is a local development project. Demo accounts are shared. Email verification, password reset, malware scanning, OCR, pagination, and production deployment are outside the current implementation. Recaps and profiles are author supplied; a QR submission does not verify attendance. Literal word matches can miss synonyms or include negated claims. A citation identifies its source, not its truth.
 
-This is a local development project. Demo accounts are shared and intended for fictional data. Email verification, password reset, upload malware scanning, OCR, audit logs, pagination, and production deployment are outside the current implementation. Literal matching misses synonyms and can return negated claims or learning interests. A citation establishes where text came from, not whether it is true. The application makes no hiring decisions.
-
-`DEMO_MODE=false` disables demo access and seed creation for a new database. It does not erase existing demo records.
-
-## Notes
-
-- [Problem and scope](docs/product.md)
-- [Architecture and tradeoffs](docs/architecture.md)
+- [Scope](docs/product.md)
+- [Architecture](docs/architecture.md)
 - [Interface and avatar credits](docs/design-system.md)
 - [Manual verification](docs/demo.md)

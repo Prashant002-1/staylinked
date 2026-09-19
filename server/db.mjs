@@ -25,10 +25,6 @@ export function openDatabase(path) {
     CREATE TABLE IF NOT EXISTS connections (id TEXT PRIMARY KEY, candidate_id TEXT REFERENCES users(id), recruiter_id TEXT REFERENCES users(id), event_id TEXT REFERENCES events(id), data TEXT NOT NULL, UNIQUE(candidate_id,event_id));
     CREATE TABLE IF NOT EXISTS materials (id TEXT PRIMARY KEY, candidate_id TEXT REFERENCES users(id), data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS roles (id TEXT PRIMARY KEY, recruiter_id TEXT REFERENCES users(id), data TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS updates (id TEXT PRIMARY KEY, author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at TEXT NOT NULL, data TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE, sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at TEXT NOT NULL, data TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS updates_author ON updates(author_id,created_at);
-    CREATE INDEX IF NOT EXISTS messages_connection ON messages(connection_id,created_at);
     CREATE INDEX IF NOT EXISTS connections_candidate ON connections(candidate_id);
     CREATE TABLE IF NOT EXISTS briefs (id TEXT PRIMARY KEY, data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS connections_recruiter ON connections(recruiter_id);
@@ -191,67 +187,6 @@ export function seedDemo(db) {
       requirements: ['Python data pipelines', 'SQL', 'CSV validation', 'Automated tests'],
     },
   ];
-  const updates = [
-    {
-      id: 'update-maya-team',
-      authorId: recruiter.id,
-      text: 'A question I kept coming back to at the fair: what did you change after watching someone use your project? The stories about small, thoughtful fixes stayed with me. Really enjoyed meeting you all yesterday.',
-      createdAt: '2026-09-19T14:20:00.000Z',
-    },
-    {
-      id: 'update-aisha-wayfinder',
-      authorId: 'aisha-demo',
-      text: 'Finished the reconnect flow in Wayfinder. Two people can now edit the same trip offline, then see exactly what changed before merging. The hardest part was making the conflict screen feel like a choice, not an error.',
-      createdAt: '2026-09-19T13:10:00.000Z',
-    },
-    {
-      id: 'update-jun-import',
-      authorId: 'jun-demo',
-      text: 'A tiny Clearfile improvement: rejected rows now come with the original row number and a plain-language explanation. Tested it with our club directory this morning. No more guessing which “invalid date” the importer meant.',
-      createdAt: '2026-09-19T11:45:00.000Z',
-    },
-    {
-      id: 'update-sofia-keyboard',
-      authorId: 'sofia-demo',
-      text: 'Ran another keyboard-only session for the pantry booking prototype. We found a focus trap I had completely missed. Fixed it, wrote down the steps, and added them to my review checklist.',
-      createdAt: '2026-09-18T20:30:00.000Z',
-    },
-    {
-      id: 'update-maya-collaboration',
-      authorId: recruiter.id,
-      text: 'Our collaboration team is exploring how a shared plan should behave when people lose connection. If we spoke about offline work at the meetup, I would love to hear where your project has gone since then.',
-      createdAt: '2026-09-16T15:00:00.000Z',
-    },
-    {
-      id: 'update-emma-notebook',
-      authorId: 'emma-demo',
-      text: 'Added a sample ratio mismatch check to my experiment notebook before any treatment comparison. A useful reminder that a neat chart cannot rescue a measurement problem.',
-      createdAt: '2026-09-15T16:15:00.000Z',
-    },
-  ];
-  const messages = [
-    {
-      id: 'message-aisha-hello',
-      connectionId: 'connection-aisha-demo',
-      senderId: recruiter.id,
-      text: 'It was lovely meeting you yesterday. I kept thinking about the merge preview you showed me. How did you decide which changes to show together?',
-      createdAt: '2026-09-19T12:00:00.000Z',
-    },
-    {
-      id: 'message-aisha-reply',
-      connectionId: 'connection-aisha-demo',
-      senderId: 'aisha-demo',
-      text: 'Likewise! I group changes by trip stop, so the person is choosing between two versions of one place rather than comparing a wall of fields. I added the reasoning to the project notes on my profile.',
-      createdAt: '2026-09-19T12:12:00.000Z',
-    },
-    {
-      id: 'message-jun-hello',
-      connectionId: 'connection-jun-demo',
-      senderId: recruiter.id,
-      text: 'Thanks for the Clearfile walkthrough. The row-level explanations are such a useful detail. Have you tried it with people outside your club yet?',
-      createdAt: '2026-09-19T10:10:00.000Z',
-    },
-  ];
   db.exec('BEGIN');
   try {
     const userInsert = db.prepare('INSERT INTO users VALUES (?,?,?,?,?)');
@@ -321,21 +256,6 @@ export function seedDemo(db) {
         role.id,
         recruiter.id,
         JSON.stringify({ ...role, recruiterId: recruiter.id }),
-      );
-    for (const update of updates)
-      db.prepare('INSERT INTO updates VALUES (?,?,?,?)').run(
-        update.id,
-        update.authorId,
-        update.createdAt,
-        JSON.stringify(update),
-      );
-    for (const message of messages)
-      db.prepare('INSERT INTO messages VALUES (?,?,?,?,?)').run(
-        message.id,
-        message.connectionId,
-        message.senderId,
-        message.createdAt,
-        JSON.stringify(message),
       );
     db.exec('COMMIT');
   } catch (error) {

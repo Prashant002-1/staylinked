@@ -33,9 +33,13 @@ const connectionSchema = z.object({
   highlight: z.string().trim().min(4).max(180),
   interest: z.string().trim().max(300).default(''),
 });
-const updateSchema = z.object({ text: z.string().trim().min(1).max(3000) }).strict();
-const messageSchema = z.object({ text: z.string().trim().min(1).max(4000) }).strict();
 const noteSchema = z.object({ title: short, text: z.string().trim().min(20).max(30000) });
+const roleSchema = z.object({
+  title: short,
+  team: z.string().trim().max(180).default(''),
+  description: z.string().trim().min(20).max(10000),
+  requirements: z.array(z.string().trim().min(1).max(200)).min(1).max(12),
+});
 const publicPerson = ({ id, kind, name, headline, bio, location, company, links, tags }) => ({
   id,
   kind,
@@ -123,6 +127,22 @@ export function createApp(options = {}) {
     }
     next();
   });
+  app.use('/api', (req, res, next) => {
+    // Bind browser requests to the account that rendered their form, even when
+    // another tab has replaced the shared session cookie in the meantime.
+    const expectedUser = req.get('X-Staylinked-User');
+    if (
+      expectedUser !== undefined &&
+      req.path !== '/session' &&
+      !req.path.startsWith('/auth/') &&
+      expectedUser !== (req.user?.id ?? 'anonymous')
+    )
+      return res.status(409).json({
+        error: 'Your account changed in another tab. Please try again.',
+        code: 'SESSION_CHANGED',
+      });
+    next();
+  });
   const auth = (kind) => (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Please sign in to continue.' });
     if (kind && req.user.kind !== kind)
@@ -153,6 +173,8 @@ export function createApp(options = {}) {
       .prepare('SELECT data FROM materials WHERE candidate_id=? ORDER BY rowid DESC')
       .all(id)
       .map(parse);
+  const materialCount = (id) =>
+    db.prepare('SELECT count(*) AS count FROM materials WHERE candidate_id=?').get(id).count;
   const eventFor = (id) => parse(db.prepare('SELECT data FROM events WHERE id=?').get(id));
   const expand = (connection) => ({
     ...stripPrivate(connection),
@@ -170,101 +192,6 @@ export function createApp(options = {}) {
     }
     return parse(row);
   };
-
-  const participantConnection = (req, res) => {
-    const connection = parse(
-      db
-        .prepare('SELECT data FROM connections WHERE id=? AND (candidate_id=? OR recruiter_id=?)')
-        .get(req.params.id, req.user.id, req.user.id),
-    );
-    if (!connection) res.status(404).json({ error: 'Connection not found.' });
-    return connection;
-  };
-  const expandUpdate = (update) => ({ ...update, author: publicPerson(getUser(update.authorId)) });
-
-  app.get('/api/updates', auth(), (req, res) => {
-    const updates = db
-      .prepare(
-        `
-      SELECT updates.data FROM updates
-      WHERE author_id=? OR author_id IN (
-        SELECT recruiter_id FROM connections WHERE candidate_id=?
-        UNION SELECT candidate_id FROM connections WHERE recruiter_id=?
-      ) ORDER BY created_at DESC, id DESC LIMIT 100
-    `,
-      )
-      .all(req.user.id, req.user.id, req.user.id)
-      .map(parse)
-      .map(expandUpdate);
-    res.json({ updates });
-  });
-  app.post('/api/updates', auth(), (req, res) => {
-    const input = updateSchema.parse(req.body);
-    const update = {
-      id: uid(),
-      authorId: req.user.id,
-      ...input,
-      createdAt: new Date().toISOString(),
-    };
-    db.prepare('INSERT INTO updates VALUES (?,?,?,?)').run(
-      update.id,
-      update.authorId,
-      update.createdAt,
-      JSON.stringify(update),
-    );
-    res.status(201).json({ update: expandUpdate(update) });
-  });
-  app.patch('/api/updates/:id', auth(), (req, res) => {
-    const existing = parse(
-      db
-        .prepare('SELECT data FROM updates WHERE id=? AND author_id=?')
-        .get(req.params.id, req.user.id),
-    );
-    if (!existing) return res.status(404).json({ error: 'Update not found.' });
-    const update = {
-      ...existing,
-      ...updateSchema.parse(req.body),
-      updatedAt: new Date().toISOString(),
-    };
-    db.prepare('UPDATE updates SET data=? WHERE id=?').run(JSON.stringify(update), update.id);
-    res.json({ update: expandUpdate(update) });
-  });
-  app.delete('/api/updates/:id', auth(), (req, res) => {
-    const result = db
-      .prepare('DELETE FROM updates WHERE id=? AND author_id=?')
-      .run(req.params.id, req.user.id);
-    if (!result.changes) return res.status(404).json({ error: 'Update not found.' });
-    res.json({ ok: true });
-  });
-  app.get('/api/connections/:id/messages', auth(), (req, res) => {
-    if (!participantConnection(req, res)) return;
-    const messages = db
-      .prepare(
-        'SELECT data FROM messages WHERE connection_id=? ORDER BY created_at DESC, rowid DESC LIMIT 100',
-      )
-      .all(req.params.id)
-      .map(parse)
-      .reverse();
-    res.json({ messages });
-  });
-  app.post('/api/connections/:id/messages', auth(), (req, res) => {
-    if (!participantConnection(req, res)) return;
-    const message = {
-      id: uid(),
-      connectionId: req.params.id,
-      senderId: req.user.id,
-      ...messageSchema.parse(req.body),
-      createdAt: new Date().toISOString(),
-    };
-    db.prepare('INSERT INTO messages VALUES (?,?,?,?,?)').run(
-      message.id,
-      message.connectionId,
-      message.senderId,
-      message.createdAt,
-      JSON.stringify(message),
-    );
-    res.status(201).json({ message });
-  });
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.get('/api/session', (req, res) =>
@@ -332,7 +259,7 @@ export function createApp(options = {}) {
       return res.status(401).json({ error: 'Email or password is incorrect.' });
     session(req, res, parse(row));
   });
-  app.post('/api/auth/logout', auth(), (req, res) => {
+  app.post('/api/auth/logout', (req, res) => {
     const token = req.headers.cookie
       ?.split(';')
       .map((s) => s.trim())
@@ -433,7 +360,7 @@ export function createApp(options = {}) {
     res.json({ ok: true });
   });
   app.post('/api/materials/note', auth('candidate'), (req, res) => {
-    if (materialsFor(req.user.id).length >= 20)
+    if (materialCount(req.user.id) >= 20)
       return res.status(400).json({ error: 'You can share up to 20 materials.' });
     const input = noteSchema.parse(req.body);
     const material = {
@@ -455,7 +382,7 @@ export function createApp(options = {}) {
     limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   });
   app.post('/api/materials/upload', auth('candidate'), upload.single('file'), async (req, res) => {
-    if (materialsFor(req.user.id).length >= 20)
+    if (materialCount(req.user.id) >= 20)
       return res.status(400).json({ error: 'You can share up to 20 materials.' });
     if (!req.file) return res.status(400).json({ error: 'Choose a file first.' });
     const ext = extname(req.file.originalname).toLowerCase();
@@ -483,6 +410,9 @@ export function createApp(options = {}) {
         return res.status(400).json({ error: 'This does not look like a text document.' });
       text = req.file.buffer.toString('utf8');
     }
+    // PDF extraction yields; another upload or note may have filled the last slot.
+    if (materialCount(req.user.id) >= 20)
+      return res.status(400).json({ error: 'You can share up to 20 materials.' });
     const id = uid();
     const path = resolve(dataDir, 'uploads', `${id}${ext}`);
     writeFileSync(path, req.file.buffer, { mode: 0o600 });
@@ -497,14 +427,20 @@ export function createApp(options = {}) {
       size: req.file.size,
       createdAt: new Date().toISOString(),
     };
-    db.prepare('INSERT INTO materials VALUES (?,?,?)').run(
-      id,
-      req.user.id,
-      JSON.stringify(material),
-    );
+    try {
+      db.prepare('INSERT INTO materials VALUES (?,?,?)').run(
+        id,
+        req.user.id,
+        JSON.stringify(material),
+      );
+    } catch (error) {
+      // A failed database write must not leave an unreferenced private document.
+      unlinkSync(path);
+      throw error;
+    }
     res.status(201).json({ material: safeMaterial(material) });
   });
-  app.get('/api/materials/:id/download', auth(), (req, res) => {
+  app.get('/api/materials/:id/download', auth(), (req, res, next) => {
     const material = parse(db.prepare('SELECT data FROM materials WHERE id=?').get(req.params.id));
     if (!material?.path) return res.status(404).json({ error: 'File not found.' });
     const owner = material.candidateId === req.user.id;
@@ -514,7 +450,13 @@ export function createApp(options = {}) {
         .prepare('SELECT id FROM connections WHERE candidate_id=? AND recruiter_id=?')
         .get(material.candidateId, req.user.id);
     if (!owner && !connected) return res.status(404).json({ error: 'File not found.' });
-    res.download(material.path, material.title);
+    res.download(material.path, material.title, (error) => {
+      if (!error) return;
+      if (res.headersSent) return res.destroy();
+      if (error.code === 'ENOENT')
+        return res.status(404).json({ error: 'The original file is no longer available.' });
+      next(error);
+    });
   });
   app.patch('/api/materials/:id', auth('candidate'), (req, res) => {
     const existing = parse(
@@ -595,27 +537,58 @@ export function createApp(options = {}) {
       config,
       fetchImpl: options.fetchImpl,
     });
+    // Slow provider calls must not outlive the permission or source snapshot.
+    const current = ownedConnection(req, res);
+    if (!current) return;
+    const currentRole = parse(
+      db.prepare('SELECT data FROM roles WHERE id=? AND recruiter_id=?').get(roleId, req.user.id),
+    );
+    if (JSON.stringify(currentRole) !== JSON.stringify(role))
+      return res
+        .status(409)
+        .json({ error: 'This role changed. Please try again.', code: 'ROLE_CHANGED' });
+    const currentSources = sourcesFor(
+      getUser(current.candidateId),
+      current,
+      materialsFor(current.candidateId),
+    );
+    if (
+      current.updatedAt !== connection.updatedAt ||
+      JSON.stringify(currentSources) !== JSON.stringify(sources)
+    )
+      return res.status(409).json({
+        error: 'This profile or shared work changed. Please try again.',
+        code: 'SOURCES_CHANGED',
+      });
     res.json({ brief, sources });
   });
   app.post('/api/roles', auth('recruiter'), (req, res) => {
-    const input = z
-      .object({
-        title: short,
-        team: z.string().trim().max(180).default(''),
-        description: z.string().trim().min(20).max(10000),
-        requirements: z.array(z.string().trim().min(2).max(200)).min(1).max(12),
-      })
-      .parse(req.body);
+    const input = roleSchema.parse(req.body);
     const role = { id: uid(), recruiterId: req.user.id, ...input };
     db.prepare('INSERT INTO roles VALUES (?,?,?)').run(role.id, req.user.id, JSON.stringify(role));
     res.status(201).json({ role });
+  });
+  app.patch('/api/workspace/roles/:id', auth('recruiter'), (req, res) => {
+    const existing = parse(
+      db
+        .prepare('SELECT data FROM roles WHERE id=? AND recruiter_id=?')
+        .get(req.params.id, req.user.id),
+    );
+    if (!existing) return res.status(404).json({ error: 'Role not found.' });
+    const role = { ...existing, ...roleSchema.parse(req.body) };
+    db.prepare('UPDATE roles SET data=? WHERE id=? AND recruiter_id=?').run(
+      JSON.stringify(role),
+      role.id,
+      req.user.id,
+    );
+    res.json({ role });
   });
   app.post('/api/events', auth('recruiter'), (req, res) => {
     const input = z
       .object({
         name: short,
         location: z.string().trim().max(180),
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        date: z.iso.date(),
         prompt: z.string().trim().min(10).max(500),
       })
       .parse(req.body);
@@ -648,7 +621,7 @@ export function createApp(options = {}) {
       image: await QRCode.toDataURL(url, {
         width: 600,
         margin: 2,
-        color: { dark: '#203f35', light: '#ffffff' },
+        color: { dark: '#171a24', light: '#ffffff' },
         errorCorrectionLevel: 'M',
       }),
       localOnly: /localhost|127\.0\.0\.1/.test(base),

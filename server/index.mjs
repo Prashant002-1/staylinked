@@ -12,7 +12,12 @@ if (process.env.NODE_ENV === 'production') {
   app.use(vite.middlewares);
 }
 const port = Number(process.env.PORT || 5173);
-app.listen(port, '0.0.0.0', () => {
+app.listen(port, '0.0.0.0', (error) => {
+  if (error) {
+    console.error(`Staylinked could not start: ${error.message}`);
+    process.exitCode = 1;
+    return;
+  }
   console.log(`Staylinked is ready at http://localhost:${port}`);
   for (const items of Object.values(networkInterfaces()))
     for (const item of items || []) {

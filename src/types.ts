@@ -69,19 +69,3 @@ export type Brief = {
   model?: string;
 };
 export type Workspace = { connections: Connection[]; events: Event[]; roles: Role[] };
-
-export type Update = {
-  id: string;
-  authorId: string;
-  text: string;
-  createdAt: string;
-  updatedAt?: string;
-  author: User;
-};
-export type Message = {
-  id: string;
-  connectionId: string;
-  senderId: string;
-  text: string;
-  createdAt: string;
-};

@@ -1,37 +1,48 @@
 # Staylinked interface
 
-## Direction
+The connections list leads to a person's profile, the meeting recap, and their work. Contextual back navigation returns to the list; the account avatar opens profile and account actions. There are no persistent navigation tabs. QR sharing and existing contact links stay close to the relevant person.
 
-A private relationship app, built with owned shadcn/ui components on Base UI. People and their work lead the interface. The shell carries the `Staylinked` name, horizontal navigation, and account access. It has no company breadcrumb or dashboard sidebar.
+## Components and hierarchy
 
-The visual system uses Geist Variable, warm neutral surfaces, clear hierarchy, and illustrated portraits. Profile and conversation views have room to read, while forms stay compact. Decoration should not compete with the person or their words.
+The interface uses [shadcn/ui](https://ui.shadcn.com/docs) components on [Base UI](https://base-ui.com/), with [Geist](https://vercel.com/font) and shared application styles. Components own focus behavior, controls, and dialogs. Content flows directly on white surfaces with ink text and a garnet accent. The encounter sits within the profile instead of a separate callout. Optional role lookup stays secondary to the person.
 
-## Components
+| Token                                         | Size               |
+| --------------------------------------------- | ------------------ |
+| Page title                                    | 28px               |
+| Section title                                 | 16px               |
+| Body                                          | 14px               |
+| Metadata                                      | 13px               |
+| Desktop control height                        | 40px               |
+| Button touch target at widths up to 480px     | At least 44 × 44px |
+| Input and textarea text at widths up to 480px | 16px               |
 
-- [shadcn/ui](https://ui.shadcn.com/docs): component source lives in the project and can be adapted with the rest of the interface.
-- [Base UI](https://base-ui.com/): accessible behavior for dialogs, menus, selections, and related controls.
-- [Geist](https://vercel.com/font): a consistent variable sans for navigation, text, and forms.
+Use spacing and type hierarchy to separate content. Avoid stacked panels, decorative dividers, and repeated explanatory copy.
 
-Shared components own focus states, surface styling, spacing, and control behavior. Application CSS defines the relationship views. Changes should be checked at both desktop and narrow phone widths, including keyboard access and reduced motion.
+Keep names and substantive content prominent. Use short action labels. Explain errors and consequential sharing choices where needed, and preserve clear feedback when saving. Implementation details belong in the documentation.
 
-## Information architecture
+Check desktop and narrow phone widths, keyboard focus, Escape behavior, long content, empty states, and reduced motion. A completed build does not establish visual acceptance.
 
-**People** contains only existing connections. Search works over those people and their shared context. Opening someone reveals the person, the encounter, their work, and the conversation.
+## Color rendering
 
-**Updates** contains posts from the signed-in user and their direct connections. There is no public feed, follower count, or audience discovery.
+Declare sRGB colors first. Override selected tokens with `color(display-p3 ...)` only when both CSS syntax support and `@media (color-gamut: p3)` match. Browsers that cannot parse the syntax or report a narrower gamut keep the sRGB palette.
 
-**Profile** holds the user's introduction and links. Candidates also manage notes and files. Editing should happen close to the content, without a separate administrative workspace.
+| Token                                  | Value                              | Calculated contrast against white |
+| -------------------------------------- | ---------------------------------- | --------------------------------- |
+| Surface                                | `#ffffff`                          | n/a                               |
+| Text                                   | `#211d21`                          | 16.64:1                           |
+| Secondary text                         | `#6e6670`                          | 5.53:1                            |
+| Primary, brand, focus ring: sRGB       | `#9f1942`                          | 7.80:1                            |
+| Primary, brand, focus ring: Display P3 | `color(display-p3 0.63 0.06 0.24)` | 7.59:1                            |
+| Input boundary                         | `#938b96`                          | 3.29:1                            |
 
-**Event sharing** remains a recruiter action. The QR portal leads with the recruiter and the event, then asks the candidate for their recap. Role lookup is secondary to the person and uses ordinary language.
+The selection tint is `#faf0f3`, or `color(display-p3 0.985 0.947 0.962)` on the gated P3 path. Supporting surfaces use neutral values from `src/styles.css`.
 
-## Copy contract
+Contrast values are calculated from the declared colors. Check CSS support, the P3 media query, and computed colors in the running browser when verifying the rendering path. The sRGB fallback has been checked in source and by calculation, not on a separate sRGB device. These checks do not measure a physical display's color accuracy. The logo mask inherits CSS color; its source PNG and the neutral SVG portraits are not P3-encoded assets.
 
-Use names, dates, content, and short actions. Explain an error or a consequential sharing choice when needed. Avoid slogans, greeting banners, repeated instructions, and technical labels such as “Role evidence.” Do not label the shell as a demo workspace.
+## Avatar credits
 
-No statuses, queues, saved states, bookmarks, rankings, or score badges are part of the relationship interface. An action's loading or error feedback is still necessary; removing labels must not hide whether a save or message succeeded.
+Local SVG portraits use [Notionists by Zoish via DiceBear](https://www.dicebear.com/styles/notionists/), licensed CC0 1.0. `npm run avatars:generate` rebuilds 32 static illustrations. Names choose a stable decorative portrait; these are not uploaded photos or identity signals. No external image service receives names.
 
-## Avatars
+Portrait backgrounds are encoded as sRGB SVG colors.
 
-Local SVG portraits use [Notionists by Zoish via DiceBear](https://www.dicebear.com/styles/notionists/), licensed CC0 1.0. `npm run avatars:generate` rebuilds the 32 static illustrations. Names choose a stable placeholder; these are decorative illustrations, not user-uploaded photos or identity signals. The generator is a development dependency and no external image service receives names.
-
-Company names may appear in introductions. They do not supply the app's brand or a separate logo system.
+Company information may appear in a person's introduction. The application carries the Staylinked name.

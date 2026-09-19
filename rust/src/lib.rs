@@ -40,6 +40,8 @@ impl std::error::Error for InvalidRequest {}
 
 fn normalize(term: &str) -> &str {
     match term {
+        "apis" => "api",
+        "golang" => "go",
         "pipelines" => "pipeline",
         "tests" => "test",
         "cells" => "cell",
@@ -50,14 +52,51 @@ fn normalize(term: &str) -> &str {
         _ => term,
     }
 }
-fn terms(text: &str) -> Vec<String> {
-    let mut seen = HashSet::new();
-    text.to_lowercase()
+fn go_language_context(tokens: &[&str], index: usize) -> bool {
+    let before = index.checked_sub(1).map(|i| tokens[i].to_lowercase());
+    let after = tokens.get(index + 1).map(|token| token.to_lowercase());
+    matches!(before.as_deref(), Some("in" | "using" | "with"))
+        || matches!(
+            after.as_deref(),
+            Some(
+                "api"
+                    | "apis"
+                    | "service"
+                    | "services"
+                    | "backend"
+                    | "code"
+                    | "program"
+                    | "programs"
+                    | "programming"
+                    | "language"
+                    | "http"
+                    | "grpc"
+            )
+        )
+}
+fn terms(text: &str, requirement: bool) -> Vec<String> {
+    let tokens: Vec<_> = text
         .split(|c: char| !c.is_alphanumeric() && c != '+' && c != '#')
-        .map(normalize)
-        .filter(|s| s.chars().count() > 2 && !STOP.split_whitespace().any(|stop| stop == *s))
-        .filter(|s| seen.insert((*s).to_owned()))
-        .map(str::to_owned)
+        .filter(|token| !token.is_empty())
+        .collect();
+    let mut seen = HashSet::new();
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, raw)| {
+            // Case is evidence for short technical names; ordinary words stay folded.
+            let short_technical = matches!(*raw, "C" | "R" | "C#" | "ML" | "UI" | "UX" | "AI")
+                || (*raw == "Go" && (requirement || go_language_context(&tokens, index)));
+            let lower = raw.to_lowercase();
+            let term = normalize(&lower);
+            if (!short_technical && raw.chars().count() <= 2)
+                || STOP.split_whitespace().any(|stop| stop == term)
+            {
+                return None;
+            }
+            let term = term.to_owned();
+            seen.insert(term.clone()).then_some(term)
+        })
         .collect()
 }
 // Slices borrow the source. Trimming and sentence splitting never rewrite a quotation.
@@ -116,7 +155,7 @@ pub fn retrieve(request: &Request) -> Result<Response, InvalidRequest> {
                 (
                     s.id.as_str(),
                     p,
-                    terms(p).into_iter().collect::<HashSet<_>>(),
+                    terms(p, false).into_iter().collect::<HashSet<_>>(),
                 )
             })
         })
@@ -125,7 +164,7 @@ pub fn retrieve(request: &Request) -> Result<Response, InvalidRequest> {
         .requirements
         .iter()
         .map(|requirement| {
-            let needles = terms(requirement);
+            let needles = terms(requirement, true);
             let mut best: Option<(&str, &str, Vec<String>, bool)> = None;
             for (id, passage, haystack) in &indexed {
                 let hits: Vec<_> = needles
@@ -198,6 +237,68 @@ mod tests {
         ))
         .unwrap();
         assert!(found.findings[0].quote.is_none());
+    }
+    #[test]
+    fn go_api_plural_keeps_both_technical_terms() {
+        let text = "I built a Go API with PostgreSQL for a print shop.";
+        let result = retrieve(&request("Go APIs", &[("work", text)])).unwrap();
+        assert_eq!(result.findings[0].quote.as_deref(), Some(text));
+        assert_eq!(result.findings[0].matched_terms, vec!["go", "api"]);
+    }
+    #[test]
+    fn go_language_does_not_match_ordinary_verb() {
+        let result = retrieve(&request(
+            "Go",
+            &[("work", "I go to the office. Go to the API documentation.")],
+        ))
+        .unwrap();
+        assert!(result.findings[0].quote.is_none());
+        for text in [
+            "I wrote the service in Go.",
+            "Go services handle our requests.",
+            "I built a Golang service.",
+        ] {
+            let result = retrieve(&request("Go", &[("work", text)])).unwrap();
+            assert_eq!(result.findings[0].quote.as_deref(), Some(text));
+        }
+    }
+    #[test]
+    fn short_language_names_remain_distinct() {
+        for language in ["C", "C#", "C++", "R"] {
+            let text = format!("I built a tool in {language}.");
+            let result = retrieve(&request(language, &[("work", &text)])).unwrap();
+            assert_eq!(result.findings[0].quote.as_deref(), Some(text.as_str()));
+            for other in ["C", "C#", "C++", "R"]
+                .into_iter()
+                .filter(|other| *other != language)
+            {
+                let result = retrieve(&request(other, &[("work", &text)])).unwrap();
+                assert!(
+                    result.findings[0].quote.is_none(),
+                    "{other} must not match {language}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn short_acronyms_require_canonical_case() {
+        for acronym in ["ML", "UI", "UX", "AI"] {
+            let text = format!("I worked on {acronym} projects.");
+            assert!(
+                retrieve(&request(acronym, &[("work", &text)]))
+                    .unwrap()
+                    .findings[0]
+                    .quote
+                    .is_some()
+            );
+            assert!(
+                retrieve(&request(acronym, &[("work", &text.to_lowercase())]))
+                    .unwrap()
+                    .findings[0]
+                    .quote
+                    .is_none()
+            );
+        }
     }
     #[test]
     fn related_work_wins_equal_coverage() {

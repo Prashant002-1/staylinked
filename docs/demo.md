@@ -1,47 +1,40 @@
-# Manual verification
+# Desktop demo rehearsal
 
-Use fictional data. Run `npm run check`, then `npm start`. The page title is Staylinked. A fresh database includes Maya Chen at Northstar and six people working in software, design, and data. Existing databases are preserved; use a separate `DATA_DIR` for a clean set of examples.
+This is a roughly three-minute walkthrough using fictional people and project work. No model API key is required. The default role lookup runs locally in Rust.
 
-## People and conversations
+## Prepare once
 
-1. Enter as the recruiter. Confirm that People shows connected people without a company header, sidebar, status controls, or bookmarks.
-2. Search for Aisha Patel and open her profile. Read the NYU Tech & Design Fair encounter and her work on offline-first software.
-3. Send a short test message. Open the candidate account in a separate browser and confirm that the message appears in the same connection. Reply and check the recruiter view.
-4. Reload both sides. The encounter and messages should persist.
-5. With an unrelated test account, request that connection's messages and materials. The server must deny access.
+```sh
+npm ci
+npm run build
+npm start
+```
 
-## Updates and profile edits
+Open [localhost:5173](http://localhost:5173) and choose **Maya Chen / Recruiter demo**. A fresh database includes Maya at Northstar, Aisha Patel, and five other connections. Existing local records are preserved. Use a separate `DATA_DIR` before starting if you need fresh demo data.
 
-1. Share a short update as the candidate. Confirm it appears for the connected recruiter and the author.
-2. Edit the update, then reload the recruiter view. Confirm that the edit persists. An unrelated account must not see it.
-3. Edit a profile field on each account type and save. Check the changed introduction from the other side.
-4. Add a candidate project note, then edit its title and text. Upload a small PDF or text file and open it from the recruiter's view.
-5. Delete a test update and note. Confirm their removal after reload. Another user must not be able to edit or delete them.
+Keep `examples/software-project.txt` ready for upload. Use one desktop browser and the account menu's **Switch to applicant** / **Switch to recruiter** actions. For simultaneous views, use separate browser profiles; ordinary tabs share an account session.
 
-## Meeting someone new
+Before recording, open **Share my code**, select **NYU Tech & Design Fair**, and save an image of its QR using the browser's image menu or a screenshot. Keep the entire white border. The applicant scanner accepts an image, so a camera is unnecessary for this rehearsal.
 
-1. Share the recruiter's event QR and preview its destination.
-2. On a separate browser or phone, create a candidate account and submit a specific recap. One browser shares one session, so switching accounts replaces that session.
-3. Confirm that both people can find their new connection.
-4. Edit the recap. The original encounter should remain available.
-5. Remove this test connection from either side. Its message history should disappear. Updates and file access must end when there is no other connection between those people.
+## Three-minute walkthrough
 
-## Work and role lookup
+| Time      | Action                                                                                                                                                                                                                   | What to show                                                                                                                                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0:00–0:25 | As Maya, open **Aisha Patel**.                                                                                                                                                                                           | Her name, project work, and the original conversation about offline editing stay together. Return to **Connections** and use **All events** to filter to **NYU Tech & Design Fair**. This filters existing connections. |
+| 0:25–0:55 | Open **Share my code** and show the event. Close it, use the account menu to **Switch to applicant**, then **Scan a code → Choose image**. Select the saved QR and **Continue** after checking Maya and the event.       | The applicant confirms the invitation before entering a note. Aisha already has a seeded encounter at this event, so this rehearsal edits that encounter.                                                               |
+| 0:55–1:20 | Keep or update the recap, then **Save changes**. Select **Add your work → Upload file** and choose `examples/software-project.txt`.                                                                                      | The saved connection leads directly to Aisha's profile. Open the uploaded file to read its extracted text; **Download original** retrieves the file without leaving the app.                                            |
+| 1:20–1:45 | Open **Edit profile** and point out the optional **LinkedIn** field. Save a small headline change, then switch back to the recruiter.                                                                                    | Applicants maintain their own profile and work. Work is visible to their connections. Leave LinkedIn blank unless you have an appropriate URL to supply; the seed does not invent one.                                  |
+| 1:45–2:30 | Open Aisha, select **View for a role**, and choose **Product Engineer** in the side panel. Click a source title beneath a quotation. Close the source and use the pencil beside the role selector to edit a requirement. | The human meeting note remains alongside role-specific passages. The source opens with the exact quotation highlighted. Saving the role recomputes the lookup; topics without a passage remain explicit.                |
+| 2:30–3:00 | Return to **Connections**, open **Daniel Park**, and choose **Data Engineer**. Point out the email icon, then return and use the account menu's **Export event connections** or **Export connections**.                  | The selected role and open panel persist between people. Contact opens the user's email app or a supplied website; Staylinked does not send a message. CSV export follows the current event filter.                     |
 
-1. From a person's view, choose the Product Engineer role and inspect a quoted passage.
-2. Confirm the quote appears exactly in the referenced source.
-3. Choose Data Engineer. Requirements and passages should reflect the new role.
-4. A missing match must not turn into a qualification judgment. The UI must not assign a person a score or ranking.
-5. Export selected connections if testing CSV. Confirm the file contains only authorized records, without status or saved columns.
+## Repeat or recover
 
-## Interface states
+- To demonstrate a new connection instead of editing Aisha's seeded encounter, use **Share my code → New event**, create a clearly named rehearsal event, and capture that event's QR. The applicant's final button is then **Connect**.
+- If the code cannot be read, choose a clearer image with its full border. If its invitation no longer exists, ask the recruiter to share the intended event's code again. **New event** creates a separate invitation; it does not rotate an existing code.
+- On one computer, keep using `localhost:5173`. There is no Network selector in the interface. Another computer needs a reachable host address configured through `PUBLIC_URL`; that is outside this single-desktop rehearsal.
+- Seed email addresses are fictional. Demonstrate the contact controls without sending outreach. A supplied LinkedIn URL gets the LinkedIn icon; other supplied links use a globe.
+- Uploads and edits persist. Remove a rehearsal upload through its options menu when finished. A candidate can edit a recap or project note, and the original recap remains available to both people.
 
-Check desktop and 390px phone widths: header navigation, People, Updates, profile editing, conversations, upload controls, event sharing, and the QR portal. Check Escape, keyboard focus, and visible focus rings in dialogs and menus. Empty searches should allow recovery. Form errors should preserve entered values, and long names or messages should not cause horizontal overflow.
+## Describe the implementation accurately
 
-## Model boundary
-
-Without a key, role lookup uses local Rust word matching. With a compatible OpenCode Go key, the server can request a source summary. Live provider verification is pending. Controlled-response tests cover request shape, caching, unsupported citations, malformed output, and fallback. Messages and updates should never trigger model calls.
-
-## Network setup
-
-Phone and laptop must share a reachable network. The QR uses the laptop's local address, or `PUBLIC_URL` when configured. Set `PUBLIC_URL=http://YOUR-LAPTOP-LAN-IP:5173` in `.env` if automatic address selection does not fit the network. A network with client isolation may require a hotspot. Local preview is not a deployed public site.
+The QR establishes access to an invitation; it does not prove that two people met. Recaps, profiles, and work are author supplied. Local role lookup finds literal word matches and exact passages, not a candidate score or a verification of their claims. No chat agent contacts either person. The optional OpenCode Go adapter is separate from this default demo, and live provider verification is pending a key.

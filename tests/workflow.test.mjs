@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -8,7 +8,14 @@ import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
 import { createApp } from '../server/app.mjs';
 import { openDatabase } from '../server/db.mjs';
-import { buildBrief, localBrief, validateModelBrief, promptSourcesFor } from '../server/briefs.mjs';
+import {
+  buildBrief,
+  localBrief,
+  validateModelBrief,
+  promptSourcesFor,
+  sourcesFor,
+  terms,
+} from '../server/briefs.mjs';
 
 function textPdf(text) {
   const stream = `BT /F1 12 Tf 40 750 Td (${text}) Tj ET`;
@@ -33,13 +40,14 @@ function textPdf(text) {
   return pdf;
 }
 
-async function fixture() {
+async function fixture(options = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'again-test-'));
   const { app, db } = createApp({
     dataDir,
     demoMode: true,
     publicUrl: 'http://192.0.2.25:5173',
     aiConfig: { apiKey: '' },
+    ...options,
   });
   const server = app.listen(0, '127.0.0.1');
   try {
@@ -573,7 +581,7 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
   });
 });
 
-test('private relationships: updates, messages, ownership, and disconnect', async (t) => {
+test('private connections: profile ownership, notes, and removed features', async (t) => {
   const f = await fixture();
   t.after(f.cleanup);
   const recruiter = f.client(),
@@ -583,7 +591,7 @@ test('private relationships: updates, messages, ownership, and disconnect', asyn
     anonymous = f.client();
   await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
   await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
-  const otherAccount = await other('/auth/register', {
+  await other('/auth/register', {
     method: 'POST',
     body: {
       name: 'Other Recruiter',
@@ -610,155 +618,8 @@ test('private relationships: updates, messages, ownership, and disconnect', asyn
     },
   });
   const connectionId = 'connection-aisha-demo';
-  let updateId, materialId;
+  let materialId;
 
-  await t.test('updates are visible only to the author and directly connected people', async () => {
-    assert.equal((await anonymous('/updates')).status, 401);
-    const strangerFeed = await other('/updates');
-    assert.deepEqual(strangerFeed.data.updates, []);
-    const candidateFeed = (await candidate('/updates')).data.updates;
-    assert.ok(candidateFeed.some((u) => u.authorId === 'aisha-demo'));
-    assert.ok(candidateFeed.some((u) => u.authorId === 'recruiter-demo'));
-    assert.ok(candidateFeed.every((u) => ['aisha-demo', 'recruiter-demo'].includes(u.authorId)));
-    assert.ok(candidateFeed.every((u) => u.author.email === undefined));
-    const peerFeed = (await peer('/updates')).data.updates;
-    assert.ok(peerFeed.every((u) => u.authorId === 'recruiter-demo'));
-    const recruiterFeed = (await recruiter('/updates')).data.updates;
-    assert.ok(recruiterFeed.some((u) => u.authorId === 'jun-demo'));
-    assert.ok(recruiterFeed.some((u) => u.authorId === 'aisha-demo'));
-  });
-  await t.test(
-    'each side creates updates but only its author can edit or delete them',
-    async () => {
-      const posted = await candidate('/updates', {
-        method: 'POST',
-        body: { text: '  Shipped the keyboard navigation update today.  ' },
-      });
-      assert.equal(posted.status, 201);
-      updateId = posted.data.update.id;
-      assert.equal(posted.data.update.text, 'Shipped the keyboard navigation update today.');
-      assert.equal(posted.data.update.author.id, 'aisha-demo');
-      assert.equal((await recruiter('/updates')).data.updates[0].id, updateId);
-      const createdAt = posted.data.update.createdAt;
-      const edited = await candidate(`/updates/${updateId}`, {
-        method: 'PATCH',
-        body: { text: 'Shipped keyboard navigation and added a regression test.' },
-      });
-      assert.equal(edited.status, 200);
-      assert.equal(edited.data.update.createdAt, createdAt);
-      assert.ok(edited.data.update.updatedAt);
-      for (const client of [recruiter, other, peer]) {
-        assert.equal(
-          (await client(`/updates/${updateId}`, { method: 'PATCH', body: { text: 'Not yours' } }))
-            .status,
-          404,
-        );
-        assert.equal((await client(`/updates/${updateId}`, { method: 'DELETE' })).status, 404);
-      }
-      assert.equal(
-        (await candidate('/updates', { method: 'POST', body: { text: '  ' } })).status,
-        400,
-      );
-      assert.equal(
-        (await candidate('/updates', { method: 'POST', body: { text: 'a'.repeat(3001) } })).status,
-        400,
-      );
-      assert.equal(
-        (
-          await candidate('/updates', {
-            method: 'POST',
-            body: { text: 'hello', authorId: 'recruiter-demo' },
-          })
-        ).status,
-        400,
-      );
-      const recruiterPost = await recruiter('/updates', {
-        method: 'POST',
-        body: { text: 'We are exploring collaborative editing this week.' },
-      });
-      assert.equal(recruiterPost.status, 201);
-      assert.ok(
-        (await candidate('/updates')).data.updates.some(
-          (u) => u.id === recruiterPost.data.update.id,
-        ),
-      );
-      assert.equal(
-        (await recruiter(`/updates/${recruiterPost.data.update.id}`, { method: 'DELETE' })).status,
-        200,
-      );
-      assert.ok(
-        !(await candidate('/updates')).data.updates.some(
-          (u) => u.id === recruiterPost.data.update.id,
-        ),
-      );
-    },
-  );
-  await t.test(
-    'messages persist in order and are accessible only to the two participants',
-    async () => {
-      const existing = (await candidate(`/connections/${connectionId}/messages`)).data.messages;
-      assert.equal(existing.length, 2);
-      const sent = await candidate(`/connections/${connectionId}/messages`, {
-        method: 'POST',
-        body: { text: 'Happy to walk through the new version together.' },
-      });
-      assert.equal(sent.status, 201);
-      assert.equal(sent.data.message.senderId, 'aisha-demo');
-      const reply = await recruiter(`/connections/${connectionId}/messages`, {
-        method: 'POST',
-        body: { text: 'That sounds good. What changed since the fair?' },
-      });
-      assert.equal(reply.status, 201);
-      const thread = (await candidate(`/connections/${connectionId}/messages`)).data.messages;
-      assert.deepEqual(
-        thread.slice(-2).map((m) => m.id),
-        [sent.data.message.id, reply.data.message.id],
-      );
-      const persisted = openDatabase(join(f.dataDir, 'again.sqlite'));
-      assert.equal(
-        JSON.parse(
-          persisted.prepare('SELECT data FROM messages WHERE id=?').get(sent.data.message.id).data,
-        ).text,
-        sent.data.message.text,
-      );
-      persisted.close();
-      for (const client of [other, peer]) {
-        assert.equal((await client(`/connections/${connectionId}/messages`)).status, 404);
-        assert.equal(
-          (
-            await client(`/connections/${connectionId}/messages`, {
-              method: 'POST',
-              body: { text: 'Intrusion' },
-            })
-          ).status,
-          404,
-        );
-        assert.equal(
-          (await client(`/connections/${connectionId}`, { method: 'DELETE' })).status,
-          404,
-        );
-      }
-      assert.equal((await anonymous(`/connections/${connectionId}/messages`)).status, 401);
-      assert.equal(
-        (
-          await candidate(`/connections/${connectionId}/messages`, {
-            method: 'POST',
-            body: { text: '' },
-          })
-        ).status,
-        400,
-      );
-      assert.equal(
-        (
-          await candidate(`/connections/${connectionId}/messages`, {
-            method: 'POST',
-            body: { text: 'Spoof', senderId: 'recruiter-demo' },
-          })
-        ).status,
-        400,
-      );
-    },
-  );
   await t.test(
     'both sides edit their own profile and candidates can revise only their own notes',
     async () => {
@@ -835,90 +696,107 @@ test('private relationships: updates, messages, ownership, and disconnect', asyn
       );
     },
   );
-  await t.test('feeds and messages return a bounded recent window', async () => {
-    for (let i = 0; i < 105; i++) {
-      const createdAt = new Date(Date.UTC(2026, 10, 1, 0, i)).toISOString();
-      const update = {
-        id: `bounded-update-${i}`,
-        authorId: otherAccount.data.user.id,
-        text: `Update ${i}`,
-        createdAt,
-      };
-      f.db
-        .prepare('INSERT INTO updates VALUES (?,?,?,?)')
-        .run(update.id, update.authorId, createdAt, JSON.stringify(update));
-      const message = {
-        id: `bounded-message-${i}`,
-        connectionId,
-        senderId: 'aisha-demo',
-        text: `Message ${i}`,
-        createdAt,
-      };
-      f.db
-        .prepare('INSERT INTO messages VALUES (?,?,?,?,?)')
-        .run(message.id, connectionId, message.senderId, createdAt, JSON.stringify(message));
-    }
-    const updates = (await other('/updates')).data.updates;
-    assert.equal(updates.length, 100);
-    assert.equal(updates[0].text, 'Update 104');
-    assert.equal(updates[99].text, 'Update 5');
-    const messages = (await recruiter(`/connections/${connectionId}/messages`)).data.messages;
-    assert.equal(messages.length, 100);
-    assert.equal(messages[0].text, 'Message 5');
-    assert.equal(messages[99].text, 'Message 104');
-  });
   await t.test(
-    'disconnect removes its thread while another encounter preserves the relationship',
+    'feed and chat endpoints are unavailable and fresh databases omit their tables',
     async () => {
-      const second = await candidate('/portal/nyc-builder-meetup/connect', {
-        method: 'POST',
-        body: {
-          highlight: 'Another conversation',
-          conversation: 'We met again to discuss the updated offline editing project.',
-        },
-      });
-      assert.equal(second.status, 201);
-      const secondId = second.data.connection.id;
-      const retained = await candidate(`/connections/${secondId}/messages`, {
-        method: 'POST',
-        body: { text: 'A separate conversation from the meetup.' },
-      });
-      assert.equal(
-        (await recruiter(`/connections/${connectionId}`, { method: 'DELETE' })).status,
-        200,
-      );
-      assert.equal((await candidate(`/connections/${connectionId}/messages`)).status, 404);
-      assert.equal(
+      const removed = [
+        ['/updates', 'GET'],
+        ['/updates', 'POST'],
+        ['/updates/update-aisha-wayfinder', 'PATCH'],
+        ['/updates/update-aisha-wayfinder', 'DELETE'],
+        [`/connections/${connectionId}/messages`, 'GET'],
+        [`/connections/${connectionId}/messages`, 'POST'],
+      ];
+      for (const client of [recruiter, candidate, anonymous]) {
+        for (const [path, method] of removed)
+          assert.equal(
+            (
+              await client(path, {
+                method,
+                ...(method === 'GET' ? {} : { body: { text: 'Unused feature' } }),
+              })
+            ).status,
+            404,
+          );
+      }
+      assert.deepEqual(
         f.db
-          .prepare('SELECT COUNT(*) AS count FROM messages WHERE connection_id=?')
-          .get(connectionId).count,
-        0,
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('updates','messages')",
+          )
+          .all(),
+        [],
       );
-      assert.ok((await recruiter('/updates')).data.updates.some((u) => u.id === updateId));
-      assert.equal(
-        (await recruiter(`/connections/${secondId}/messages`)).data.messages[0].id,
-        retained.data.message.id,
-      );
-      assert.equal((await candidate(`/connections/${secondId}`, { method: 'DELETE' })).status, 200);
-      assert.equal((await recruiter(`/connections/${secondId}/messages`)).status, 404);
-      assert.equal(
-        (
-          await recruiter(`/connections/${secondId}/messages`, {
-            method: 'POST',
-            body: { text: 'After disconnect' },
-          })
-        ).status,
-        404,
-      );
-      assert.ok(
-        !(await recruiter('/updates')).data.updates.some((u) => u.authorId === 'aisha-demo'),
-      );
-      assert.ok(
-        (await candidate('/updates')).data.updates.every((u) => u.authorId === 'aisha-demo'),
-      );
-      assert.equal((await candidate(`/updates/${updateId}`, { method: 'DELETE' })).status, 200);
     },
   );
+  await t.test('disconnect access lasts only while another encounter exists', async () => {
+    const file = new FormData();
+    file.append(
+      'file',
+      new Blob(['A private project document shared with my connections.']),
+      'private-project.txt',
+    );
+    const upload = await candidate('/materials/upload', { method: 'POST', body: file });
+    assert.equal(upload.status, 201);
+    const fileId = upload.data.material.id;
+    const second = await candidate('/portal/nyc-builder-meetup/connect', {
+      method: 'POST',
+      body: {
+        highlight: 'Another conversation',
+        conversation: 'We met again to discuss the updated offline editing project.',
+      },
+    });
+    assert.equal(second.status, 201);
+    const secondId = second.data.connection.id;
+    for (const client of [other, peer])
+      assert.equal(
+        (await client(`/connections/${connectionId}`, { method: 'DELETE' })).status,
+        404,
+      );
+    assert.equal(
+      (await recruiter(`/connections/${connectionId}`, { method: 'DELETE' })).status,
+      200,
+    );
+    assert.equal((await recruiter(`/materials/${fileId}/download`)).status, 200);
+    assert.ok(
+      (await candidate('/candidate')).data.connections.some(
+        (connection) => connection.id === secondId,
+      ),
+    );
+    assert.equal((await candidate(`/connections/${secondId}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await recruiter(`/materials/${fileId}/download`)).status, 404);
+    assert.equal((await candidate(`/materials/${fileId}/download`)).status, 200);
+    assert.ok(
+      !(await recruiter('/workspace')).data.connections.some(
+        (connection) => connection.candidateId === 'aisha-demo',
+      ),
+    );
+  });
+  await t.test('opening an existing database leaves legacy feature records untouched', () => {
+    f.db.exec(`
+      CREATE TABLE updates (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE messages (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      INSERT INTO updates VALUES ('legacy-update', '{"text":"Existing private update"}');
+      INSERT INTO messages VALUES ('legacy-message', '{"text":"Existing private message"}');
+    `);
+    const reopened = openDatabase(join(f.dataDir, 'again.sqlite'));
+    try {
+      assert.equal(
+        JSON.parse(
+          reopened.prepare('SELECT data FROM updates WHERE id=?').get('legacy-update').data,
+        ).text,
+        'Existing private update',
+      );
+      assert.equal(
+        JSON.parse(
+          reopened.prepare('SELECT data FROM messages WHERE id=?').get('legacy-message').data,
+        ).text,
+        'Existing private message',
+      );
+    } finally {
+      reopened.close();
+    }
+  });
 });
 
 test('legacy workflow is removed; CSV and private source access remain scoped', async (t) => {
@@ -1011,3 +889,550 @@ test('legacy workflow is removed; CSV and private source access remain scoped', 
     404,
   );
 });
+
+test('stale browser identity cannot read or mutate the newly signed-in account', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const browser = f.client();
+  await browser('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  const staleHeaders = { 'X-Staylinked-User': 'recruiter-demo' };
+  assert.equal((await browser('/workspace', { headers: staleHeaders })).status, 200);
+  await browser('/auth/demo', {
+    method: 'POST',
+    body: { kind: 'candidate' },
+    headers: staleHeaders,
+  });
+  const before = (await browser('/candidate')).data.profile;
+  const staleSave = await browser('/profile', {
+    method: 'PUT',
+    headers: staleHeaders,
+    body: {
+      name: 'Maya Chen',
+      headline: 'Wrong account',
+      bio: 'A stale recruiter form must not overwrite the applicant profile.',
+      links: [],
+      tags: [],
+    },
+  });
+  assert.equal(staleSave.status, 409);
+  assert.equal(staleSave.data.code, 'SESSION_CHANGED');
+  assert.deepEqual((await browser('/candidate')).data.profile, before);
+  assert.equal((await browser('/candidate', { headers: staleHeaders })).status, 409);
+  assert.equal((await browser('/workspace')).status, 403);
+  const staleConnect = await browser('/portal/nyc-builder-meetup/connect', {
+    method: 'POST',
+    headers: { 'X-Staylinked-User': 'anonymous' },
+    body: {
+      highlight: 'An old anonymous form',
+      conversation: 'This note was entered before someone else signed in.',
+    },
+  });
+  assert.equal(staleConnect.status, 409);
+  assert.equal((await browser('/candidate')).data.connections.length, 1);
+  const actualSession = await browser('/session', { headers: staleHeaders });
+  assert.equal(actualSession.status, 200);
+  assert.equal(actualSession.data.user.id, 'aisha-demo');
+  const candidateHeaders = { 'X-Staylinked-User': 'aisha-demo' };
+  const validSave = await browser('/profile', {
+    method: 'PUT',
+    headers: candidateHeaders,
+    body: { ...before, headline: 'Updated with the current account' },
+  });
+  assert.equal(validSave.status, 200);
+  assert.equal(validSave.data.user.id, 'aisha-demo');
+  await browser('/auth/logout', { method: 'POST', headers: staleHeaders });
+  assert.equal((await browser('/candidate', { headers: candidateHeaders })).status, 409);
+  assert.equal((await browser('/candidate')).status, 401);
+});
+
+test('parallel PDF uploads enforce the shared material limit after extraction', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const candidate = f.client();
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  for (let i = 0; i < 18; i++) {
+    const material = {
+      id: `limit-note-${i}`,
+      candidateId: 'aisha-demo',
+      title: `Note ${i}`,
+      type: 'note',
+      text: 'A useful note about the project.',
+      createdAt: new Date().toISOString(),
+    };
+    f.db
+      .prepare('INSERT INTO materials VALUES (?,?,?)')
+      .run(material.id, material.candidateId, JSON.stringify(material));
+  }
+  const upload = () => {
+    const body = new FormData();
+    body.append(
+      'file',
+      new Blob([textPdf('Project notes about React and TypeScript.')], { type: 'application/pdf' }),
+      'project.pdf',
+    );
+    return candidate('/materials/upload', { method: 'POST', body });
+  };
+  const results = await Promise.all([upload(), upload()]);
+  assert.deepEqual(results.map((result) => result.status).sort(), [201, 400]);
+  assert.equal((await candidate('/candidate')).data.materials.length, 20);
+});
+
+test(
+  'disconnect during a role lookup revokes its pending private response',
+  { timeout: 10000 },
+  async (t) => {
+    let providerStarted, finishProvider;
+    const started = new Promise((resolve) => {
+      providerStarted = resolve;
+    });
+    const finish = new Promise((resolve) => {
+      finishProvider = resolve;
+    });
+    const f = await fixture({
+      aiConfig: {
+        apiKey: 'test-only-key',
+        baseUrl: 'https://provider.example/v1',
+        model: 'test-model',
+      },
+      fetchImpl: async (_url, options) => {
+        const { role } = JSON.parse(JSON.parse(options.body).messages[1].content);
+        providerStarted();
+        await finish;
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summary: 'Candidate supplied project notes.',
+                  findings: role.requirements.map((requirement) => ({
+                    requirement,
+                    sourceId: null,
+                    quote: null,
+                    note: 'No passage selected.',
+                  })),
+                }),
+              },
+            },
+          ],
+        });
+      },
+    });
+    t.after(() => {
+      finishProvider();
+      return f.cleanup();
+    });
+    const recruiter = f.client(),
+      candidate = f.client();
+    await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+    await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+    const pending = recruiter('/workspace/connections/connection-aisha-demo/brief', {
+      method: 'POST',
+      body: { roleId: 'product-engineer' },
+    });
+    await started;
+    assert.equal(
+      (await candidate('/connections/connection-aisha-demo', { method: 'DELETE' })).status,
+      200,
+    );
+    finishProvider();
+    const result = await pending;
+    assert.equal(result.status, 404);
+    assert.equal(result.data.sources, undefined);
+    assert.equal(result.data.brief, undefined);
+  },
+);
+
+test(
+  'candidate work removed during lookup cannot be returned from the old source snapshot',
+  { timeout: 10000 },
+  async (t) => {
+    let providerStarted, finishProvider;
+    const started = new Promise((resolve) => {
+      providerStarted = resolve;
+    });
+    const finish = new Promise((resolve) => {
+      finishProvider = resolve;
+    });
+    const f = await fixture({
+      aiConfig: {
+        apiKey: 'test-only-key',
+        baseUrl: 'https://provider.example/v1',
+        model: 'test-model',
+      },
+      fetchImpl: async () => {
+        providerStarted();
+        await finish;
+        return new Response('Unavailable', { status: 503 });
+      },
+    });
+    t.after(() => {
+      finishProvider();
+      return f.cleanup();
+    });
+    const recruiter = f.client(),
+      candidate = f.client();
+    await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+    await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+    const pending = recruiter('/workspace/connections/connection-aisha-demo/brief', {
+      method: 'POST',
+      body: { roleId: 'product-engineer' },
+    });
+    await started;
+    assert.equal(
+      (await candidate('/materials/material-aisha-demo', { method: 'DELETE' })).status,
+      200,
+    );
+    finishProvider();
+    const result = await pending;
+    assert.equal(result.status, 409);
+    assert.equal(result.data.code, 'SOURCES_CHANGED');
+    assert.equal(result.data.sources, undefined);
+    assert.equal(result.data.brief, undefined);
+  },
+);
+
+test('source bounds preserve Unicode and handle legacy accounts with extra materials', async () => {
+  const text = 'React '.repeat(2999) + 'Hello😀 end.';
+  const materials = Array.from({ length: 22 }, (_, i) => ({
+    id: `material-${i}`,
+    title: `Note ${i}`,
+    type: 'note',
+    text,
+  }));
+  const sources = sourcesFor(
+    { bio: 'I build software.' },
+    { conversation: 'We discussed TypeScript.' },
+    materials,
+  );
+  assert.equal(sources.length, 22);
+  assert.ok(sources.every((source) => source.text.isWellFormed()));
+  assert.ok(
+    sources
+      .filter((source) => source.kind === 'Candidate note')
+      .every((source) => text.includes(source.text)),
+  );
+  const result = await localBrief(
+    { name: 'Unicode Candidate' },
+    { highlight: 'React project' },
+    { requirements: ['React'] },
+    sources,
+  );
+  assert.ok(result.findings[0].quote);
+  assert.ok(text.includes(result.findings[0].quote));
+});
+
+test('file persistence failures leave no orphan upload and missing files return404', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const candidate = f.client();
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  f.db.exec(
+    "CREATE TRIGGER reject_file_insert BEFORE INSERT ON materials BEGIN SELECT RAISE(FAIL, 'Forced test failure'); END;",
+  );
+  const upload = () => {
+    const body = new FormData();
+    body.append('file', new Blob(['My private project document.']), 'project.txt');
+    return candidate('/materials/upload', { method: 'POST', body });
+  };
+  assert.equal((await upload()).status, 500);
+  assert.deepEqual(readdirSync(join(f.dataDir, 'uploads')), []);
+  assert.equal((await candidate('/candidate')).data.materials.length, 1);
+  f.db.exec('DROP TRIGGER reject_file_insert');
+  const saved = await upload();
+  assert.equal(saved.status, 201);
+  const record = JSON.parse(
+    f.db.prepare('SELECT data FROM materials WHERE id=?').get(saved.data.material.id).data,
+  );
+  unlinkSync(record.path);
+  const missing = await candidate(`/materials/${saved.data.material.id}/download`);
+  assert.equal(missing.status, 404);
+  assert.match(missing.data.error, /original file/);
+  assert.equal(
+    (await candidate(`/materials/${saved.data.material.id}`, { method: 'DELETE' })).status,
+    200,
+  );
+});
+
+test('model excerpt budgets never cut Unicode characters', () => {
+  const sources = [
+    { id: 'partial', title: 'Notes', text: 'x'.repeat(4499) + '😀 end.' },
+    ...Array.from({ length: 8 }, (_, i) => ({
+      id: `full-${i}`,
+      title: 'Notes',
+      text: 'x'.repeat(4500),
+    })),
+    { id: 'last', title: 'Notes', text: '😀'.repeat(1000) },
+  ];
+  const selected = promptSourcesFor(sources, { requirements: ['React'] });
+  const nearBudget = [
+    ...sources.slice(1, 9),
+    { id: 'boundary', title: 'Notes', text: 'x'.repeat(3999) + '😀 end.' },
+  ];
+  const bounded = promptSourcesFor(nearBudget, { requirements: ['React'] });
+  assert.ok(bounded.every((source) => source.text.isWellFormed()));
+  assert.ok(bounded.reduce((total, source) => total + source.text.length, 0) <= 40000);
+  assert.ok(selected.every((source) => source.text.isWellFormed()));
+  assert.ok(
+    selected.every((source) =>
+      sources.find((original) => original.id === source.id).text.includes(source.text),
+    ),
+  );
+  assert.ok(selected.every((source) => source.text.length <= 4500));
+  assert.ok(selected.reduce((total, source) => total + source.text.length, 0) <= 40000);
+});
+
+test('event dates are real calendar dates and expired sessions can still sign out', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const recruiter = f.client();
+  await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  const event = {
+    name: 'Next meetup',
+    location: 'New York',
+    prompt: 'What project did we discuss together?',
+  };
+  const impossible = await recruiter('/events', {
+    method: 'POST',
+    body: { ...event, date: '2026-02-30' },
+  });
+  assert.equal(impossible.status, 400);
+  const leapDay = await recruiter('/events', {
+    method: 'POST',
+    body: { ...event, date: '2028-02-29' },
+  });
+  assert.equal(leapDay.status, 201);
+  f.db.prepare('UPDATE sessions SET expires=0').run();
+  const signedOut = await recruiter('/auth/logout', { method: 'POST' });
+  assert.equal(signedOut.status, 200);
+  assert.match(signedOut.headers.get('set-cookie'), /again_session=;/);
+  assert.equal((await recruiter('/session')).data.user, null);
+  assert.equal((await recruiter('/auth/logout', { method: 'POST' })).status, 200);
+});
+
+test('short technical vocabulary agrees across Rust lookup and model excerpt selection', async () => {
+  const cases = [
+    ['Go APIs', 'I built a Go API with PostgreSQL for a print shop.', true],
+    ['Go', 'I go to the office every day.', false],
+    ['Go', 'Go to the API documentation.', false],
+    ['Go', 'I built the backend in Go.', true],
+    ['Go', 'I built a Golang service.', true],
+    ['C#', 'I wrote a C# program.', true],
+    ['C#', 'I wrote a C++ program.', false],
+    ['C', 'I wrote a C# program.', false],
+    ['C++', 'I wrote a C program.', false],
+    ['R', 'I used R for statistical analysis.', true],
+    ['ML UI UX', 'I built ML models and designed UI and UX.', true],
+    ['ML', 'We measured 10 ml of water.', false],
+    ['Java', 'I wrote a JavaScript application.', false],
+  ];
+  for (const [requirement, text, matched] of cases) {
+    const result = await localBrief(
+      { name: 'Test' },
+      { highlight: 'Project' },
+      { requirements: [requirement] },
+      [{ id: 'work', title: 'Project', text }],
+    );
+    const finding = result.findings[0];
+    assert.equal(!!finding.quote, matched, `${requirement}: ${text}`);
+    assert.deepEqual(
+      finding.matchedTerms,
+      terms(requirement, true).filter((term) => terms(text).includes(term)),
+    );
+  }
+  const passages = 'Go to the API documentation. I built a Go API with PostgreSQL.';
+  const selected = promptSourcesFor([{ id: 'work', title: 'Project', text: passages }], {
+    requirements: ['Go'],
+  });
+  assert.equal(selected[0].text, 'I built a Go API with PostgreSQL.');
+});
+
+test('a recruiter can find Daniel’s Go API work through the role endpoint', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const recruiter = f.client();
+  await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  const role = await recruiter('/roles', {
+    method: 'POST',
+    body: {
+      title: 'Backend Engineer',
+      team: 'Product',
+      description: 'Build reliable service APIs and maintain clear integration tests.',
+      requirements: ['Go APIs', 'PostgreSQL', 'C#'],
+    },
+  });
+  assert.equal(role.status, 201);
+  const result = await recruiter('/workspace/connections/connection-daniel-demo/brief', {
+    method: 'POST',
+    body: { roleId: role.data.role.id },
+  });
+  assert.equal(result.status, 200);
+  assert.match(result.data.brief.findings[0].quote, /I built a Go API with PostgreSQL/);
+  assert.deepEqual(result.data.brief.findings[0].matchedTerms, ['go', 'api']);
+  assert.equal(result.data.brief.findings[2].quote, null);
+});
+
+test('role edits stay owner-scoped and update lookup without creating another role', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const recruiter = f.client(),
+    candidate = f.client(),
+    other = f.client(),
+    anonymous = f.client();
+  await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  await other('/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'Another Recruiter',
+      email: 'other-roles@test.example',
+      password: 'temporary-test-pass',
+      kind: 'recruiter',
+    },
+  });
+  const original = (await recruiter('/workspace')).data.roles.find(
+    (role) => role.id === 'product-engineer',
+  );
+  const count = f.db.prepare('SELECT count(*) AS count FROM roles').get().count;
+  const changed = {
+    title: 'Backend Engineer',
+    team: 'Platform',
+    description: 'Build reliable backend services and document their failure cases.',
+    requirements: ['Go APIs', 'PostgreSQL', 'C'],
+  };
+  for (const [client, status] of [
+    [anonymous, 401],
+    [candidate, 403],
+    [other, 404],
+  ])
+    assert.equal(
+      (await client('/workspace/roles/product-engineer', { method: 'PATCH', body: changed }))
+        .status,
+      status,
+    );
+  for (const invalid of [
+    { ...changed, title: '' },
+    { ...changed, requirements: [] },
+    { ...changed, requirements: [' '] },
+    { ...changed, description: 'Too short' },
+  ]) {
+    assert.equal(
+      (await recruiter('/workspace/roles/product-engineer', { method: 'PATCH', body: invalid }))
+        .status,
+      400,
+    );
+    assert.deepEqual(
+      (await recruiter('/workspace')).data.roles.find((role) => role.id === original.id),
+      original,
+    );
+  }
+  const result = await recruiter('/workspace/roles/product-engineer', {
+    method: 'PATCH',
+    body: { ...changed, id: 'forged-id', recruiterId: 'forged-owner' },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.role.id, original.id);
+  assert.equal(result.data.role.recruiterId, original.recruiterId);
+  assert.deepEqual(result.data.role.requirements, changed.requirements);
+  assert.equal(f.db.prepare('SELECT count(*) AS count FROM roles').get().count, count);
+  const brief = await recruiter('/workspace/connections/connection-daniel-demo/brief', {
+    method: 'POST',
+    body: { roleId: original.id },
+  });
+  assert.equal(brief.status, 200);
+  assert.deepEqual(
+    brief.data.brief.findings.map((finding) => finding.requirement),
+    changed.requirements,
+  );
+  assert.match(brief.data.brief.findings[0].quote, /I built a Go API with PostgreSQL/);
+  assert.equal(brief.data.brief.findings[2].quote, null);
+  assert.equal(
+    (await recruiter('/workspace/roles/missing-role', { method: 'PATCH', body: changed })).status,
+    404,
+  );
+});
+
+test(
+  'role edits invalidate cached briefs and an older pending lookup',
+  { timeout: 10000 },
+  async (t) => {
+    let started,
+      finishProvider,
+      calls = 0;
+    const providerStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    const finish = new Promise((resolve) => {
+      finishProvider = resolve;
+    });
+    const f = await fixture({
+      aiConfig: {
+        apiKey: 'test-only-key',
+        baseUrl: 'https://provider.example/v1',
+        model: 'test-model',
+      },
+      fetchImpl: async (_url, options) => {
+        calls++;
+        const { role } = JSON.parse(JSON.parse(options.body).messages[1].content);
+        if (calls === 1) {
+          started();
+          await finish;
+        }
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summary: 'Candidate supplied project notes.',
+                  findings: role.requirements.map((requirement) => ({
+                    requirement,
+                    sourceId: null,
+                    quote: null,
+                    note: 'No passage selected.',
+                  })),
+                }),
+              },
+            },
+          ],
+        });
+      },
+    });
+    t.after(() => {
+      finishProvider();
+      return f.cleanup();
+    });
+    const recruiter = f.client();
+    await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+    const lookup = () =>
+      recruiter('/workspace/connections/connection-daniel-demo/brief', {
+        method: 'POST',
+        body: { roleId: 'product-engineer' },
+      });
+    const pending = lookup();
+    await providerStarted;
+    const edited = await recruiter('/workspace/roles/product-engineer', {
+      method: 'PATCH',
+      body: {
+        title: 'Backend Engineer',
+        team: 'Platform',
+        description: 'Build reliable Go APIs and maintain readable service documentation.',
+        requirements: ['Go APIs'],
+      },
+    });
+    assert.equal(edited.status, 200);
+    finishProvider();
+    const stale = await pending;
+    assert.equal(stale.status, 409);
+    assert.equal(stale.data.code, 'ROLE_CHANGED');
+    assert.equal(stale.data.brief, undefined);
+    const fresh = await lookup();
+    assert.equal(fresh.status, 200);
+    assert.deepEqual(
+      fresh.data.brief.findings.map((finding) => finding.requirement),
+      ['Go APIs'],
+    );
+    assert.equal(calls, 2);
+    const cached = await lookup();
+    assert.equal(cached.data.brief.cached, true);
+    assert.equal(calls, 2);
+  },
+);

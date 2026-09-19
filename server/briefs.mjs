@@ -8,6 +8,8 @@ const stop = new Set(
   ),
 );
 const forms = {
+  apis: 'api',
+  golang: 'go',
   pipelines: 'pipeline',
   tests: 'test',
   cells: 'cell',
@@ -16,10 +18,40 @@ const forms = {
   records: 'record',
   reproducibility: 'reproducible',
 };
-export const terms = (text) =>
-  [...new Set((text.toLowerCase().match(/[a-z0-9+#]+/g) || []).map((t) => forms[t] || t))].filter(
-    (t) => t.length > 2 && !stop.has(t),
-  );
+const shortTechnical = new Set(['C', 'R', 'C#', 'ML', 'UI', 'UX', 'AI']);
+const goBefore = new Set(['in', 'using', 'with']);
+const goAfter = new Set([
+  'api',
+  'apis',
+  'service',
+  'services',
+  'backend',
+  'code',
+  'program',
+  'programs',
+  'programming',
+  'language',
+  'http',
+  'grpc',
+]);
+// Keep this small vocabulary in step with rust/src/lib.rs for model excerpts.
+export function terms(text, requirement = false) {
+  const tokens = text.match(/[\p{Alphabetic}\p{N}+#]+/gu) || [];
+  return [
+    ...new Set(
+      tokens.flatMap((raw, index) => {
+        const short =
+          shortTechnical.has(raw) ||
+          (raw === 'Go' &&
+            (requirement ||
+              goBefore.has(tokens[index - 1]?.toLowerCase()) ||
+              goAfter.has(tokens[index + 1]?.toLowerCase())));
+        const term = forms[raw.toLowerCase()] || raw.toLowerCase();
+        return (short || Array.from(raw).length > 2) && !stop.has(term) ? [term] : [];
+      }),
+    ),
+  ];
+}
 export function sourcesFor(profile, connection, materials) {
   return [
     {
@@ -31,10 +63,11 @@ export function sourcesFor(profile, connection, materials) {
     { id: 'profile', title: 'About me', text: profile.bio || '', kind: 'Candidate profile' },
     ...materials
       .filter((m) => m.text?.trim())
+      .slice(0, 20)
       .map((m) => ({
         id: m.id,
         title: m.title,
-        text: m.text.slice(0, 18000),
+        text: Array.from(m.text).slice(0, 18000).join(''),
         kind: m.type === 'file' ? 'Uploaded document' : 'Candidate note',
       })),
   ].filter((s) => s.text.trim());
@@ -83,8 +116,10 @@ export function validateModelBrief(value, role, sources) {
   }
   return parsed;
 }
+// Keep the existing character budgets without ending an excerpt inside an emoji.
+const excerpt = (text, limit) => text.slice(0, limit).replace(/[\uD800-\uDBFF]$/, '');
 export function promptSourcesFor(sources, role) {
-  const needles = new Set(terms(role.requirements.join(' ')));
+  const needles = new Set(role.requirements.flatMap((requirement) => terms(requirement, true)));
   // Bound per-person context before a paid request. Keep source IDs and exact text.
   const selected = sources.map((source) => {
     const sentences = source.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
@@ -100,13 +135,13 @@ export function promptSourcesFor(sources, role) {
       .sort((a, b) => a.index - b.index);
     return {
       ...source,
-      text: (relevant.length ? relevant.map((s) => s.text).join('\n') : source.text).slice(0, 4500),
+      text: excerpt(relevant.length ? relevant.map((s) => s.text).join('\n') : source.text, 4500),
     };
   });
   let budget = 40000;
   return selected.flatMap((source) => {
     if (budget <= 0) return [];
-    const text = source.text.slice(0, budget);
+    const text = excerpt(source.text, budget);
     budget -= text.length;
     return [{ ...source, text }];
   });
@@ -126,7 +161,7 @@ export async function buildBrief({
   const key = createHash('sha256')
     .update(
       JSON.stringify({
-        v: 2,
+        v: 3,
         profile,
         connection: {
           highlight: connection.highlight,

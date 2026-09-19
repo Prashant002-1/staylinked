@@ -1,36 +1,20 @@
-# Problem and scope
+# Scope
 
-Staylinked is an HR hackathon submission about maintaining a relationship after meeting in person.
+Staylinked keeps the context of an in-person recruiting conversation attached to the people who met.
 
-## Scenario
+At a career fair, Aisha describes an offline-first application to Maya, a talent partner at the fictional software company Northstar. Maya shares an event QR. Aisha records their conversation about synchronization bugs and adds her project notes. Later, Maya can revisit that encounter and the current work, then contact Aisha through her existing links.
 
-At a university career fair, a candidate describes an offline-first application they built. Maya, a talent partner at the fictional software company Northstar, remembers their explanation of a difficult synchronization bug. There may be no suitable opening that day. Weeks later, the candidate has shipped another version, and Maya's team is looking for someone with related experience.
+## Current flow
 
-The useful record is the person, the conversation, and what has changed since they met. The app keeps those together. The candidate records the initial recap after scanning a QR, both people can share updates, and a private conversation lets them pick things up later.
+1. The recruiter creates or chooses an event and shares its QR.
+2. The candidate signs in, records the encounter, and connects.
+3. Either person opens the other person's profile from their connections.
+4. The candidate maintains their profile, notes, files, and recap. Editing the recap preserves its original version.
+5. The recruiter can inspect exact passages from that work against a selected role's requirements.
+6. Contact links open email, LinkedIn, or a website. Either person can remove the connection.
 
-Existing recruiting CRMs and networking tools address parts of this problem. This project explores a small set of relationship interactions and a particular division of effort, without claiming that the category is new.
+The interface consists of a connections list, person profiles, profile editing, and event sharing. Access follows an existing connection. The QR portal exposes only the event and a limited recruiter introduction.
 
-## Design decisions
+The project does not verify attendance, identity, or qualifications. The Rust matcher and optional model adapter return source passages without ranking people. No hiring outcome or time saving has been measured.
 
-| Problem                                                      | Implemented choice                                                                         | Limit                                                             |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| A recruiter cannot take detailed notes on every conversation | The candidate records a short recap through an event QR                                    | The candidate still needs to complete the form and authenticate   |
-| The memorable detail disappears among contact exchanges      | The encounter stays attached to the person, preserving the original recap                  | Author-supplied context does not verify attendance                |
-| A profile goes stale after meeting                           | Both people can update their profile and share updates with their connections              | There is no email or push notification service                    |
-| Reconnecting requires finding the old email thread           | Each connection has a private conversation                                                 | Messages stay inside the app                                      |
-| Work becomes relevant to a new role                          | Exact passages from candidate-supplied work can be inspected against role requirements     | Literal matching misses meaning and synonyms                      |
-| A public network introduces unwanted exposure                | People and updates are limited to direct connections, with no public profiles or discovery | Another connection with the same person continues to grant access |
-
-## Working scope
-
-Both sides have People, Updates, an editable profile, and private conversations. Candidates add project notes, upload PDF/TXT/Markdown files, and edit their encounter recap. Recruiters create event portals, share QR codes, and inspect a person's supplied work for a role. Either person can remove a connection.
-
-People can search their connections without assigning them statuses, saved flags, or bookmarks. Company information belongs in a person's introduction where relevant; the company does not become the application's navigation or branding.
-
-The Rust matcher and optional OpenCode Go adapter return sources. Neither ranks people, verifies identity, assigns candidate confidence, or decides whom to contact. There is no public feed, automated messaging, or lie detection.
-
-## Questions for a small usability study
-
-Can candidates record the useful detail without rewriting their résumé? Can either person find a remembered conversation weeks later? Is it easy to share a small update or restart the conversation? Can a recruiter inspect relevant work without reading every file?
-
-Measure time on those tasks and observe errors. No recruiting outcome, time saving, or trust improvement has been measured by this project.
+For a usability study, observe whether people can record the memorable detail, find the encounter later, maintain their work, and use it to resume contact. Record task completion, time, and errors.

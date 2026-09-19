@@ -1,60 +1,53 @@
-# Architecture and tradeoffs
+# Architecture
 
-## Boundaries
+## Application and records
 
-The React client uses one same-origin Express API. Node handles sessions, scrypt password hashes, SQLite, private files, PDF extraction, QR creation, and the optional model call. Rust handles passage matching behind one JSON stdin/stdout contract. The executable has no server, persistent state, vector index, or network client.
+React calls a same-origin Express API. Node handles cookie sessions, scrypt password hashes, SQLite, private files, PDF extraction, QR creation, and optional model requests.
 
-A process boundary is easy to inspect and test across languages, but starting a process has overhead. The current on-demand, single-person lookup does not justify a resident service or queue. This choice is not evidence of a speed improvement; measure before changing it.
+The JSON client applies a 30-second deadline through response-body reading. A caller's earlier cancellation still takes priority; QR reads use 12 seconds. Timers and abort listeners are released after completion. Requests are not retried automatically. If a mutation times out or its response cannot be read, the interface explains that it may have saved and asks the user to refresh before retrying.
 
-## Records
+SQLite stores JSON records alongside indexed ownership columns: users, recruiter-owned events and roles, candidate-owned materials, candidate/event connections, and a cache of validated role summaries. A connection retains the original and current recap, memorable detail, interest, and timestamps. This storage model keeps iteration small; pagination and more structured querying remain future work.
 
-- User: authenticated recruiter or candidate, with an editable profile and links.
-- Event: owned by a recruiter, with public portal metadata and a candidate prompt.
-- Connection: one candidate/event pair, retaining the original and current conversation, memorable detail, interest, and timestamps.
-- Material: candidate-owned note or uploaded file, extracted text, extraction state, and timestamps.
-- Update: author-owned text visible to the author and people directly connected to them.
-- Message: text from one participant in a specific connection, visible to its two participants.
-- Role: recruiter-owned title, description, and explicit requirements.
-- Brief cache: validated model output keyed by the source and role inputs.
+Both account types can edit their own profile. Candidates can edit note titles and text. Uploaded documents are replaced by uploading a new file and deleting the old one. Files live outside the public static directory, with authorization checked on each download.
 
-SQLite stores small records as JSON alongside indexed ownership columns. This keeps iteration simple but limits query efficiency as the data grows. People search runs in the client over authorized connections. Update and message reads return bounded results; pagination remains future work.
+## Access
 
-## Relationship access
+Authenticated connection routes expose a person's shared profile and, to a connected recruiter, the candidate's materials. The event portal exposes only its public event metadata and a limited recruiter introduction. There is no public profile directory.
 
-The connection graph currently joins a recruiter and candidate. It does not expose candidates to other candidates or make a recruiter's whole network visible. A connection grants access to that person's shared profile and, for recruiters, the candidate's materials. The only unauthenticated relationship entry point is an event portal with the recruiter's limited introduction and event details. There is no public profile directory or discovery endpoint.
+Either participant can remove a connection. Access remains only if another connection between those people still grants it. Removing a connection does not delete the other person's profile or work. Contact actions use existing email and web links; the server does not send outreach.
 
-`GET /api/updates` returns the latest 100 updates authored by the signed-in user or their direct connections. Feed author objects omit email addresses. Authors can create, edit, and delete their own updates, with a 3,000-character text limit.
+The client includes its current account ID in API requests. If another tab has changed the shared session cookie, the server rejects the mismatched request before reading or writing private records. Focus and visibility refreshes reconcile the session, and responses from an earlier account are discarded. This consistency check supplements session authentication.
 
-Messages belong to a connection, not a global inbox address. Its two participants can read and write messages; reads return the latest 100 in chronological order, and messages are limited to 4,000 characters. The application sends no email or automated outreach.
+CSV export validates ownership of selected connections, escapes cells, and prefixes spreadsheet formula-like values. Import mapping is the receiving system's responsibility. Shared demo accounts are unsuitable for private personal information.
 
-Either participant can remove a connection. Its messages are deleted with it. Feed and download access disappear when no other connection between those people remains. Removing a connection does not delete the other person's profile, updates, or work. The author retains those records.
+## QR reader
 
-Both account types can edit their own profile. Candidates can edit the title and text of their notes. Uploaded documents remain unchanged; replacing one means uploading the new file and deleting the old one. Local file storage is outside the public static directory, and downloads check access on every request.
+The browser decodes camera frames or a selected image with `jsQR`. Camera access starts only after **Use camera** is selected and requires a secure browser context. Image selection remains available when a camera cannot be used. Media tracks, animation frames, pending lookups, and temporary image URLs are released when scanning stops or the dialog closes. Finding a code stops capture before looking up the invitation. Lookup reads time out after 12 seconds and can be retried.
 
-These are implemented access boundaries, not a claim of complete production security. Shared demo accounts are unsuitable for private personal information.
+The decoder accepts an invitation-shaped `/connect/:id` path, extracts only the event ID, and requests the current application's portal endpoint. It never fetches or navigates to the host encoded in the QR. A valid local event is shown for review; **Continue** opens its local connection route. Physical-camera behavior has not been tested.
 
-## Rust retrieval
+## Rust passage lookup
 
-`rust/src/lib.rs` exposes typed `Request`, `Source`, `Finding`, and `Response` structures. Serde derives JSON serialization. Input validation returns a `Result`; the CLI writes a concise error to stderr and exits unsuccessfully for invalid input. Library tests exercise the algorithm without starting a process.
+`rust/src/lib.rs` defines typed `Request`, `Source`, `Finding`, and `Response` structures. Serde handles JSON. Validation returns a `Result`; the CLI reports invalid input on stderr and exits unsuccessfully.
 
-1. Validate 1–12 requirements and at most 22 sources. Requirements are capped at 200 characters and source text at 18,000 characters. The CLI caps total stdin at 2 MB.
-2. Split source text into borrowed sentence or line slices. Quotations are never rewritten.
-3. Lowercase and tokenize, remove a fixed stop list, and normalize a short explicit list of word forms.
-4. Count matching whole words for each requirement. Prefer greater coverage, then a passage of at least nine words. Work precedes the profile and recap in equal conditions; other ties preserve source order.
-5. Return the original requirement, source ID, quotation, and matching terms. No match returns null source and quote.
+1. Accept 1–12 requirements and at most 22 sources. Requirements are capped at 200 characters, source text at 18,000 characters, and total stdin at 2 MB.
+2. Split source text into borrowed sentence or line slices, preserving quotations.
+3. Tokenize whole words, remove a fixed stop list, and normalize a short explicit list of word forms, including APIs to API and Golang to Go. Ordinary tokens are case folded. The short technical tokens `C`, `R`, `C#`, `ML`, `UI`, `UX`, and `AI` require their canonical capitalization; `C`, `C#`, and `C++` remain separate tokens.
+4. Count matching whole words. Prefer greater coverage, then a passage of at least nine words. Work precedes the profile and recap in equal conditions; remaining ties preserve source order.
+5. Return the requirement, source ID, quotation, and matching terms. An unmatched requirement has null source and quote.
 
-Node invokes the binary with `execFile`, no shell, a three-second timeout, and a one-megabyte output buffer. Node validates source IDs, exact quotations, and requirement order again at the process boundary.
+Node invokes `staylinked-evidence` with `execFile`, no shell, a three-second timeout, and a one-megabyte output buffer. It validates source IDs, exact quotations, and requirement order again at the process boundary. Inputs are the candidate's recap, profile, and work.
 
-The matcher does not understand meaning, infer qualifications, or detect deception. A sentence such as “I have no Kubernetes experience” can match Kubernetes. The original passage remains visible so the reader can interpret it. Private messages and updates are not added to the role lookup corpus; the inputs remain the candidate's recap, profile, and work.
+Before returning a pending role lookup, the server rechecks the connection and current sources. A removed connection or changed source set invalidates that response.
 
-Patterns consulted: [Rust Result-based error handling](https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html), [Rust test organization](https://doc.rust-lang.org/book/ch11-03-test-organization.html), and [Serde derives](https://serde.rs/derive.html).
+A requirement may name `Go` directly. A source must use `Go` with adjacent coding wording, such as “Go API”, “Go services”, or “in Go”; lowercase everyday “go” and “Go to…” do not match the language. `Golang` is an explicit alias. These conservative rules can miss lowercase acronyms or a standalone Go skill-list entry. The optional model excerpt selector uses the same vocabulary. This is a small literal vocabulary, not language understanding.
 
-## Optional model adapter
+The executable has no database, network client, or index. Starting a process adds overhead, so this boundary does not imply a speed improvement. A sentence such as “I have no Kubernetes experience” can match Kubernetes; the reader must interpret the passage. Literal matching does not establish qualifications.
 
-OpenCode Go is an optional Chat Completions provider. Bounded excerpt selection constructs at most 40,000 characters of context. A result must contain each role requirement exactly once and only quote provided source text. It is validated against both the full sources and the smaller model context. This establishes quotation provenance, not factual truth or summary accuracy.
+References: [Rust error handling](https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html), [test organization](https://doc.rust-lang.org/book/ch11-03-test-organization.html), and [Serde derives](https://serde.rs/derive.html).
 
-The model has no tools, write actions, or message-sending capability. Source documents are treated as untrusted input. Failed validation, provider errors, or timeout fall back to Rust text matches. The API key stays in server environment variables. Real-provider behavior and cost have not been measured.
+## Optional OpenCode Go adapter
 
-## Export
+The Chat Completions adapter constructs at most 40,000 source characters, with up to 4,500 per source. A result must contain each role requirement exactly once and quote only supplied text. Validation checks both the full sources and the smaller model context. Cache inputs include the role, materials, recap, model, and endpoint.
 
-CSV export checks ownership of every selected connection, escapes cells, and prefixes spreadsheet formula-like values. It exports the encounter and contact information without a status, saved flag, or shortlist. Import mapping remains the receiving system's responsibility. Live ATS, email, and calendar connectors are not implemented.
+The key stays in server environment variables. The model has no tools or write actions. Invalid output, provider errors, and a 25-second timeout fall back to Rust matches. Quotation provenance does not establish factual truth or summary accuracy. Live provider behavior and cost remain unmeasured.
