@@ -58,4 +58,3 @@ This is a local development project. Demo accounts are shared. Email verificatio
 - [Trust, encounter context, and existing tools](docs/trust-and-context.md)
 - [Architecture](docs/architecture.md)
 - [Interface and avatar credits](docs/design-system.md)
-- [Manual verification](docs/demo.md)

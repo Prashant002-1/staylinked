@@ -12,3 +12,4 @@ artifacts/
 
 .tools/
 target/
+docs/demo.md
