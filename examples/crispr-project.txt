@@ -1,0 +1,17 @@
+FICTIONAL DEMO MATERIAL
+
+CRISPR-Cas9 delivery project
+
+This example is for demonstrating Again. It does not describe a real person or a verified study.
+
+Project context
+I worked on a supervised student project comparing CRISPR-Cas9 delivery conditions in mammalian cell culture.
+
+My contribution
+I prepared guide RNA controls, performed DNA extraction and PCR, and tracked cell passage number and reagent timing in a lab notebook.
+
+What changed
+When results were inconsistent, I compared the recorded conditions across experiments. I revised the preparation checklist so each experiment used the same passage range and documented reagent timing.
+
+What I would discuss next
+I would like to understand how your lab documents controls, reviews unexpected results, and maintains reproducible protocols as the team grows.
