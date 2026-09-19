@@ -1,32 +1,34 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  ArrowRight,
   ArrowUpRight,
-  Check,
   FileText,
-  Link2,
   LogOut,
   Plus,
-  ScanLine,
   Trash2,
   Upload,
   Users,
+  X,
+  CalendarDays,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { api, date, json } from './api';
 import { useAuth } from './session';
-import { Avatar, Brand, Empty, ErrorMessage, Loading, Modal, SubmitButton } from './ui';
-import type { Connection, Material, User } from './types';
-
+import { Avatar, Brand, Empty, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
+import { MaterialPreview } from './ConnectionPanel';
+import type { User, Material, Connection } from './types';
 function ProfileForm({ profile, saved }: { profile: User; saved: (user: User) => void }) {
   const [links, setLinks] = useState(profile.links);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   return (
     <form
-      className="form-stack profile-form"
-      onChange={() => setSuccess(false)}
+      className="form-stack"
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -37,15 +39,15 @@ function ProfileForm({ profile, saved }: { profile: User; saved: (user: User) =>
             method: 'PUT',
             body: json({
               ...data,
-              tags: String(data.tags || '')
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean),
               links: links.filter((l) => l.url.trim()),
+              tags: String(data.tags)
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean),
             }),
           });
           saved(user);
-          setSuccess(true);
+          toast.success('Profile saved');
         } catch (e) {
           setError((e as Error).message);
         } finally {
@@ -53,122 +55,80 @@ function ProfileForm({ profile, saved }: { profile: User; saved: (user: User) =>
         }
       }}
     >
-      <div className="section-title">
-        <div>
-          <span className="eyebrow">YOUR REUSABLE INTRODUCTION</span>
-          <h2>The person behind the conversation.</h2>
-        </div>
-      </div>
       <div className="form-row">
-        <label>
-          Your name
-          <input
-            name="name"
-            defaultValue={profile.name}
-            required
-            maxLength={180}
-            autoComplete="name"
-          />
-        </label>
-        <label>
-          Location
-          <input
-            name="location"
-            defaultValue={profile.location}
-            maxLength={180}
-            placeholder="Brooklyn, NY"
-          />
-        </label>
+        <Field label="Name">
+          <Input name="name" defaultValue={profile.name} maxLength={100} required />
+        </Field>
+        <Field label="Location">
+          <Input name="location" defaultValue={profile.location} maxLength={180} />
+        </Field>
       </div>
-      <label>
-        A little about what you do
-        <input
+      <Field label="Headline">
+        <Input
           name="headline"
           defaultValue={profile.headline}
           maxLength={180}
-          placeholder="Bioengineering researcher · NYU"
+          placeholder="Researcher · NYU"
         />
-      </label>
-      <label>
-        Your story
-        <textarea
-          name="bio"
-          defaultValue={profile.bio}
-          rows={5}
-          maxLength={8000}
-          placeholder="What have you worked on? What are you curious about? Write it in your own words."
-        />
-      </label>
-      <label>
-        Areas you work in <span className="field-hint">Separate with commas. Up to 10.</span>
-        <input
+      </Field>
+      <Field label="About">
+        <Textarea name="bio" defaultValue={profile.bio} rows={6} maxLength={8000} />
+      </Field>
+      <Field label="Skills / areas of work" hint="Separate with commas. Up to 10.">
+        <Input
           name="tags"
           defaultValue={profile.tags?.join(', ')}
           placeholder="CRISPR, cell culture, research"
         />
-      </label>
-      <div className="section-title small">
-        <label>Find more of your work</label>
-        <button
+      </Field>
+      <div className="section-heading mt-3">
+        <h3>Links</h3>
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
-          className="text-button"
           disabled={links.length >= 10}
-          onClick={() => {
-            setLinks([...links, { label: '', url: '' }]);
-            setSuccess(false);
-          }}
+          onClick={() => setLinks([...links, { label: '', url: '' }])}
         >
-          <Plus size={14} />
+          <Plus />
           Add link
-        </button>
+        </Button>
       </div>
       {links.map((l, i) => (
         <div className="link-fields" key={i}>
-          <input
+          <Input
             aria-label={`Link ${i + 1} label`}
-            placeholder="Portfolio, LinkedIn…"
+            placeholder="Portfolio"
             value={l.label}
             maxLength={80}
+            required={!!l.url}
             onChange={(e) =>
               setLinks(links.map((v, j) => (j === i ? { ...v, label: e.target.value } : v)))
             }
           />
-          <input
+          <Input
             aria-label={`Link ${i + 1} URL`}
             type="url"
-            placeholder="https://…"
+            placeholder="https://"
             value={l.url}
             onChange={(e) =>
               setLinks(links.map((v, j) => (j === i ? { ...v, url: e.target.value } : v)))
             }
           />
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             type="button"
-            className="icon-button"
             aria-label={`Remove link ${i + 1}`}
-            onClick={() => {
-              setLinks(links.filter((_, j) => j !== i));
-              setSuccess(false);
-            }}
+            onClick={() => setLinks(links.filter((_, j) => j !== i))}
           >
-            <Trash2 size={16} />
-          </button>
+            <X />
+          </Button>
         </div>
       ))}
-      {!links.length && (
-        <p className="fine-print">
-          <Link2 size={13} /> A portfolio, research page, or LinkedIn profile helps tell the rest.
-        </p>
-      )}
       <ErrorMessage message={error} />
-      <div className="form-footer">
-        <SubmitButton busy={busy}>Save profile</SubmitButton>
-        {success && (
-          <span className="success-text" role="status">
-            <Check size={15} />
-            Saved for your connections
-          </span>
-        )}
+      <div className="form-actions border-t pt-5">
+        <SubmitButton busy={busy}>Save changes</SubmitButton>
       </div>
     </form>
   );
@@ -177,20 +137,17 @@ function NoteModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return (
-    <Modal title="Give your work a little context." onClose={onClose}>
-      <p className="muted">
-        A project, an experiment, an experience. Tell the story in your own words.
-      </p>
+    <Modal title="Add project note" onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
-          setError('');
           const body = Object.fromEntries(new FormData(e.currentTarget));
           try {
             await api('/materials/note', { method: 'POST', body: json(body) });
             onSaved();
+            toast.success('Note added');
           } catch (e) {
             setError((e as Error).message);
           } finally {
@@ -198,29 +155,25 @@ function NoteModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
           }
         }}
       >
-        <label>
-          Title
-          <input
+        <Field label="Title">
+          <Input
             name="title"
             required
             maxLength={180}
-            placeholder="CRISPR-Cas9 delivery · research overview"
+            placeholder="CRISPR-Cas9 delivery research"
           />
-        </label>
-        <label>
-          What did you do?
-          <textarea
-            name="text"
-            required
-            minLength={20}
-            maxLength={30000}
-            rows={8}
-            placeholder="What was the problem? What was your contribution? What did you learn or achieve?"
-          />
-        </label>
-        <p className="fine-print">This will be visible to recruiters you connect with.</p>
+        </Field>
+        <Field label="Project / experience">
+          <Textarea name="text" required minLength={20} maxLength={30000} rows={8} />
+        </Field>
+        <p className="text-xs text-muted-foreground">Shared with recruiters you connect with.</p>
         <ErrorMessage message={error} />
-        <SubmitButton busy={busy}>Share project note</SubmitButton>
+        <div className="form-actions">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <SubmitButton busy={busy}>Add note</SubmitButton>
+        </div>
       </form>
     </Modal>
   );
@@ -228,23 +181,24 @@ function NoteModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
 export default function Candidate() {
   const auth = useAuth();
   const navigate = useNavigate();
+  const input = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<{
     profile: User;
     materials: Material[];
     connections: Connection[];
   } | null>(null);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState('profile');
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState(false);
   const [preview, setPreview] = useState<Material | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{
+  const [removal, setRemoval] = useState<{
     kind: 'materials' | 'connections';
     id: string;
     title: string;
   } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-  const [tab, setTab] = useState('profile');
   const load = useCallback(async () => {
     try {
       setData(await api('/candidate'));
@@ -265,20 +219,27 @@ export default function Candidate() {
     try {
       await api('/materials/upload', { method: 'POST', body });
       await load();
+      toast.success('File uploaded');
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setUploading(false);
     }
   };
+  const remove = (target: NonNullable<typeof removal>) => {
+    setDeleteError('');
+    setRemoval(target);
+  };
   return (
     <div className="candidate-page">
       <header className="candidate-header">
         <Brand />
-        <div className="candidate-header-actions">
+        <div className="flex items-center gap-3">
           {auth.demoMode && (
-            <button
-              className="text-button demo-switch-top"
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Recruiter demo"
               onClick={async () => {
                 try {
                   await auth.demo('recruiter');
@@ -288,14 +249,14 @@ export default function Candidate() {
                 }
               }}
             >
-              <Users size={15} />
-              Recruiter demo
-              <ArrowUpRight size={13} />
-            </button>
+              <Users />
+              <span className="mobile-hide">Recruiter demo</span>
+            </Button>
           )}
           <Avatar name={auth.user!.name} size="small" />
-          <button
-            className="icon-button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             aria-label="Sign out"
             onClick={async () => {
               try {
@@ -306,228 +267,173 @@ export default function Candidate() {
               }
             }}
           >
-            <LogOut size={17} />
-          </button>
+            <LogOut />
+          </Button>
         </div>
       </header>
       <main className="candidate-main">
-        <div className="candidate-intro">
+        <div className="candidate-identity">
+          <Avatar name={auth.user!.name} size="large" />
           <div>
-            <span className="eyebrow">YOUR NEXT CHAPTER STARTS WITH YOU</span>
-            <h1>Make yourself memorable.</h1>
-            <p>Your work. Your words. A little context that goes a long way.</p>
+            <h1>{auth.user!.name}</h1>
+            <p>{auth.user!.headline || auth.user!.email}</p>
           </div>
-          <span className="candidate-flower" aria-hidden="true">
-            ✳
-          </span>
+          {auth.demoMode && (
+            <Badge variant="outline" className="ml-auto text-muted-foreground">
+              Demo profile
+            </Badge>
+          )}
         </div>
-        <div className="candidate-nav" role="tablist" aria-label="Your space">
-          <button
-            role="tab"
-            aria-selected={tab === 'profile'}
-            className={tab === 'profile' ? 'active' : ''}
-            onClick={() => setTab('profile')}
-          >
-            My profile & work
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'connections'}
-            className={tab === 'connections' ? 'active' : ''}
-            onClick={() => setTab('connections')}
-          >
-            My connections <span>{data?.connections.length || 0}</span>
-          </button>
-        </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
+          <TabsList variant="line" className="candidate-tabs">
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="work">
+              Work<span className="count-pill">{data?.materials.length || 0}</span>
+            </TabsTrigger>
+            <TabsTrigger value="connections">
+              Connections<span className="count-pill">{data?.connections.length || 0}</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
         <ErrorMessage message={error} />
         {!data ? (
           <Loading />
         ) : tab === 'profile' ? (
-          <div className="candidate-grid">
-            <div>
-              <section className="paper-card">
-                <ProfileForm
-                  profile={data.profile}
-                  saved={(user) => {
-                    auth.setUser(user);
-                    setData((d) => d && { ...d, profile: user });
+          <div className="settings-layout">
+            <aside>
+              <h2>Personal information</h2>
+              <p>Visible to your connections.</p>
+            </aside>
+            <ProfileForm
+              profile={data.profile}
+              saved={(user) => {
+                auth.setUser(user);
+                setData((d) => d && { ...d, profile: user });
+              }}
+            />
+          </div>
+        ) : tab === 'work' ? (
+          <section className="candidate-work">
+            <div className="page-heading">
+              <div>
+                <h2>Shared work</h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  PDF, TXT, Markdown · 8 MB per file
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setNote(true)}>
+                  <Plus />
+                  Add note
+                </Button>
+                <Button disabled={uploading} onClick={() => input.current?.click()}>
+                  <Upload />
+                  {uploading ? 'Uploading…' : 'Upload'}
+                </Button>
+                <input
+                  ref={input}
+                  type="file"
+                  accept=".pdf,.txt,.md"
+                  className="sr-only"
+                  aria-label="Upload work"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    void upload(e.target.files?.[0]);
+                    e.target.value = '';
                   }}
                 />
-              </section>
-              <section className="paper-card work-section">
-                <div className="section-title">
-                  <div>
-                    <span className="eyebrow">SHOW THE WORK</span>
-                    <h2>A little substance goes a long way.</h2>
-                  </div>
-                </div>
-                <p className="muted">
-                  Share a résumé, a paper, or the story of a project. You can keep adding to it
-                  after the event.
-                </p>
-                <div className="upload-actions">
-                  <label className={`button secondary ${uploading ? 'disabled' : ''}`}>
-                    <Upload size={16} />
-                    {uploading ? 'Reading your file…' : 'Upload a file'}
-                    <input
-                      type="file"
-                      accept=".pdf,.txt,.md"
-                      className="visually-hidden"
-                      disabled={uploading}
-                      onChange={(e) => {
-                        void upload(e.target.files?.[0]);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                  <button className="button secondary" onClick={() => setNote(true)}>
-                    <Plus size={16} />
-                    Write a project note
-                  </button>
-                </div>
-                <p className="fine-print">
-                  PDF, TXT, or Markdown · Up to 8 MB each · Up to 20 materials
-                </p>
-                <div className="candidate-materials">
-                  {data.materials.map((m) => (
-                    <div className="material-with-action" key={m.id}>
-                      <button className="material-row" onClick={() => setPreview(m)}>
-                        <span className="file-icon">
-                          <FileText size={20} />
-                        </span>
-                        <span>
-                          <strong>{m.title}</strong>
-                          <small>
-                            {m.type === 'file' ? 'Document' : 'Project note'} · {date(m.createdAt)}
-                            {m.extraction && m.extraction !== 'ready'
-                              ? ' · Add a note for searchable context'
-                              : ''}
-                          </small>
-                        </span>
-                        <ArrowUpRight size={16} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label={`Remove ${m.title}`}
-                        onClick={() => {
-                          setDeleteError('');
-                          setDeleteTarget({ kind: 'materials', id: m.id, title: m.title });
-                        }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                {!data.materials.length && (
-                  <Empty title="Your work belongs here.">
-                    A short, specific project note is a great place to start.
-                  </Empty>
-                )}
-              </section>
+              </div>
             </div>
-            <aside className="candidate-aside">
-              <section className="context-tip">
-                <span className="tip-icon">
-                  <ScanLine size={24} />
-                </span>
-                <h3>
-                  A good conversation
-                  <br />
-                  is already a head start.
-                </h3>
-                <p>
-                  Scan a recruiter’s QR to save what you talked about. Your profile and work stay
-                  connected to that moment.
-                </p>
-                <div className="tip-step">
-                  <span>01</span>Meet someone.
-                </div>
-                <div className="tip-step">
-                  <span>02</span>Keep the context.
-                </div>
-                <div className="tip-step">
-                  <span>03</span>Give it somewhere to grow.
-                </div>
-                {auth.demoMode && (
-                  <Link to="/connect/nyu-science-fair" className="text-link">
-                    Try the event portal
-                    <ArrowRight size={15} />
-                  </Link>
-                )}
-              </section>
-              <section className="ownership-note">
-                <LeafIcon />
-                <h4>Still your story.</h4>
-                <p>
-                  Only recruiters you connect with can access your profile and materials. Updates
-                  are shared with those connections. Remove a connection to revoke their access.
-                </p>
-                <p>You own the words. You choose what to share.</p>
-              </section>
-            </aside>
-          </div>
-        ) : (
-          <div className="candidate-connections">
-            {data.connections.map((c) => (
-              <article className="connection-card" key={c.id}>
-                <div className="connection-card-head">
-                  <Avatar name={c.recruiter!.name} />
-                  <div>
-                    <h3>{c.recruiter?.name}</h3>
-                    <span>
-                      {c.recruiter?.company} · {c.recruiter?.headline || 'Recruiter'}
+            <div className="candidate-material-list">
+              {data.materials.map((m) => (
+                <div className="candidate-material" key={m.id}>
+                  <Button variant="ghost" className="material-row" onClick={() => setPreview(m)}>
+                    <span className="file-icon">
+                      <FileText />
                     </span>
-                  </div>
-                  <span className="tag">
-                    <Check size={12} />
-                    Connection saved
-                  </span>
-                </div>
-                <div className="connection-card-context">
-                  <span className="eyebrow">
-                    {c.event.name} · {date(c.createdAt)}
-                  </span>
-                  <h4>{c.highlight}</h4>
-                  <p>“{c.conversation}”</p>
-                </div>
-                <div className="connection-card-actions">
-                  <Link className="text-link" to={`/connect/${c.eventId}`}>
-                    Update your recap
-                    <ArrowRight size={15} />
-                  </Link>
-                  <button
-                    className="text-button muted"
-                    onClick={() => {
-                      setDeleteError('');
-                      setDeleteTarget({
-                        kind: 'connections',
-                        id: c.id,
-                        title: `your connection with ${c.recruiter?.name}`,
-                      });
-                    }}
+                    <span className="min-w-0 flex-1">
+                      <strong>{m.title}</strong>
+                      <small>
+                        {m.type === 'file' ? 'Document' : 'Project note'} · {date(m.createdAt)}
+                        {m.extraction && m.extraction !== 'ready' ? ' · No searchable text' : ''}
+                      </small>
+                    </span>
+                    <ArrowUpRight />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove ${m.title}`}
+                    onClick={() => remove({ kind: 'materials', id: m.id, title: m.title })}
                   >
-                    Remove connection
-                  </button>
+                    <Trash2 />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {!data.materials.length && (
+              <Empty title="No work added">
+                <Button variant="link" onClick={() => input.current?.click()}>
+                  Upload a file
+                </Button>
+              </Empty>
+            )}
+            <p className="sharing-note">Updates are shared with your connections.</p>
+          </section>
+        ) : (
+          <section className="candidate-connections">
+            {data.connections.map((c) => (
+              <article className="candidate-connection" key={c.id}>
+                <div className="flex items-center gap-3">
+                  <Avatar name={c.recruiter!.name} />
+                  <div className="flex-1">
+                    <h3>{c.recruiter?.name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {c.recruiter?.company} · {c.recruiter?.headline || 'Recruiter'}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove connection with ${c.recruiter?.name}`}
+                    onClick={() =>
+                      remove({ kind: 'connections', id: c.id, title: c.recruiter!.name })
+                    }
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+                <div className="encounter mt-5">
+                  <div className="encounter-meta">
+                    <CalendarDays className="size-3.5" />
+                    {c.event.name}
+                    <span className="ml-auto">{date(c.createdAt)}</span>
+                  </div>
+                  <h3>{c.highlight}</h3>
+                  <p>{c.conversation}</p>
+                </div>
+                <div className="flex justify-end mt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    render={<Link to={`/connect/${c.eventId}`} />}
+                    nativeButton={false}
+                  >
+                    Edit recap
+                    <ArrowUpRight />
+                  </Button>
                 </div>
               </article>
             ))}
             {!data.connections.length && (
-              <Empty title="The start of something good.">
-                Scan a recruiter’s Again QR after a conversation. Your connections will live here.
-              </Empty>
+              <Empty title="No connections yet">Scan a recruiter’s event QR to connect.</Empty>
             )}
-            <p className="fine-print">
-              A saved connection keeps your context together. It is not a job application or a
-              promise of a response.
+            <p className="sharing-note">
+              Removing a connection revokes access through that connection.
             </p>
-          </div>
+          </section>
         )}
       </main>
-      <footer className="candidate-footer">
-        <Brand />
-        <span>Good conversations go somewhere.</span>
-      </footer>
       {note && (
         <NoteModal
           onClose={() => setNote(false)}
@@ -536,46 +442,33 @@ export default function Candidate() {
             void load();
           }}
         />
-      )}{' '}
-      {preview && (
-        <Modal title={preview.title} onClose={() => setPreview(null)} wide>
-          <div className="source-text">
-            {preview.text ||
-              'No text could be extracted. The original file is still available. Add a project note so recruiters can find the context.'}
-          </div>
-          {preview.type === 'file' && (
-            <a className="button secondary" href={`/api/materials/${preview.id}/download`}>
-              <FileText size={16} />
-              Download original
-            </a>
-          )}
-        </Modal>
       )}
-      {deleteTarget && (
+      {preview && <MaterialPreview material={preview} onClose={() => setPreview(null)} />}
+      {removal && (
         <Modal
-          title={`Remove ${deleteTarget.kind === 'materials' ? 'this material' : 'this connection'}?`}
-          onClose={() => setDeleteTarget(null)}
+          title={removal.kind === 'materials' ? 'Remove material?' : 'Remove connection?'}
+          onClose={() => setRemoval(null)}
         >
-          <p className="muted">
-            {deleteTarget.kind === 'materials'
-              ? `${deleteTarget.title} will no longer be available to your connections.`
-              : `Removing ${deleteTarget.title} revokes this connection's access. If you have another connection with the same recruiter, that connection still shares your profile.`}
+          <p className="text-sm text-muted-foreground">
+            {removal.kind === 'materials'
+              ? `${removal.title} will no longer be available to your connections.`
+              : `Access through this connection with ${removal.title} will be revoked. Other connections with this recruiter still share your profile.`}
           </p>
           <ErrorMessage message={deleteError} />
-          <div className="modal-actions">
-            <button className="button secondary" onClick={() => setDeleteTarget(null)}>
-              Keep it
-            </button>
-            <button
-              className="button danger"
+          <div className="form-actions">
+            <Button variant="outline" onClick={() => setRemoval(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
               disabled={deleting}
               onClick={async () => {
                 setDeleting(true);
-                setDeleteError('');
                 try {
-                  await api(`/${deleteTarget.kind}/${deleteTarget.id}`, { method: 'DELETE' });
-                  setDeleteTarget(null);
+                  await api(`/${removal.kind}/${removal.id}`, { method: 'DELETE' });
+                  setRemoval(null);
                   await load();
+                  toast.success('Removed');
                 } catch (e) {
                   setDeleteError((e as Error).message);
                 } finally {
@@ -584,13 +477,10 @@ export default function Candidate() {
               }}
             >
               {deleting ? 'Removing…' : 'Remove'}
-            </button>
+            </Button>
           </div>
         </Modal>
       )}
     </div>
   );
-}
-function LeafIcon() {
-  return <span className="ownership-icon">↗</span>;
 }

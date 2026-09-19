@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ArrowRight, ScanLine, Users, Sprout, FileCheck2, Quote } from 'lucide-react';
+import { ArrowRight, BriefcaseBusiness, UserRound, Loader2 } from 'lucide-react';
 import { useAuth } from './session';
 import { api, json } from './api';
-import { Brand, Avatar, ErrorMessage, Loading, SubmitButton } from './ui';
+import { Brand, ErrorMessage, Loading, SubmitButton, Field, Choice } from './ui';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import type { User } from './types';
-
 export function AuthForm({
   onDone,
   candidateOnly = false,
@@ -14,111 +17,102 @@ export function AuthForm({
   candidateOnly?: boolean;
 }) {
   const { setUser } = useAuth();
-  const [register, setRegister] = useState(true);
+  const [mode, setMode] = useState('register');
   const [kind, setKind] = useState<User['kind']>('candidate');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   return (
-    <form
-      className="form-stack"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
+    <Tabs
+      value={mode}
+      onValueChange={(v) => {
+        setMode(v);
         setError('');
-        const data = Object.fromEntries(new FormData(e.currentTarget));
-        try {
-          const { user } = await api<{ user: User }>(`/auth/${register ? 'register' : 'login'}`, {
-            method: 'POST',
-            body: json({ ...data, kind: candidateOnly ? 'candidate' : kind }),
-          });
-          setUser(user);
-          onDone(user);
-        } catch (e) {
-          setError((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
       }}
     >
-      <div className="segmented">
-        <button
-          type="button"
-          className={register ? 'active' : ''}
-          onClick={() => setRegister(true)}
-        >
+      <TabsList className="w-full">
+        <TabsTrigger className="flex-1" value="register">
           Create account
-        </button>
-        <button
-          type="button"
-          className={!register ? 'active' : ''}
-          onClick={() => setRegister(false)}
-        >
+        </TabsTrigger>
+        <TabsTrigger className="flex-1" value="login">
           Sign in
-        </button>
-      </div>
-      {register && (
-        <>
-          <label>
-            Your name
-            <input
-              name="name"
-              autoComplete="name"
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value={mode}>
+        <form
+          className="form-stack pt-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError('');
+            const data = Object.fromEntries(new FormData(e.currentTarget));
+            try {
+              const { user } = await api<{ user: User }>(`/auth/${mode}`, {
+                method: 'POST',
+                body: json({ ...data, kind: candidateOnly ? 'candidate' : kind }),
+              });
+              setUser(user);
+              onDone(user);
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {mode === 'register' && (
+            <>
+              <Field label="Full name">
+                <Input name="name" autoComplete="name" required maxLength={180} />
+              </Field>
+              {!candidateOnly && (
+                <Field label="Account type">
+                  <Choice
+                    label="Account type"
+                    value={kind}
+                    onChange={(v) => setKind(v as User['kind'])}
+                    options={[
+                      { value: 'candidate', label: 'Candidate' },
+                      { value: 'recruiter', label: 'Recruiter' },
+                    ]}
+                    className="w-full"
+                  />
+                </Field>
+              )}
+              {kind === 'recruiter' && !candidateOnly && (
+                <Field label="Company">
+                  <Input name="company" maxLength={120} required />
+                </Field>
+              )}
+            </>
+          )}
+          <Field label="Email">
+            <Input name="email" type="email" autoComplete="email" required />
+          </Field>
+          <Field label="Password" hint={mode === 'register' ? '8 characters minimum' : undefined}>
+            <Input
+              name="password"
+              type="password"
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+              minLength={mode === 'register' ? 8 : 1}
+              maxLength={128}
               required
-              maxLength={180}
-              placeholder="Alex Morgan"
             />
-          </label>
-          {!candidateOnly && (
-            <label>
-              I'm here as a
-              <select value={kind} onChange={(e) => setKind(e.target.value as User['kind'])}>
-                <option value="candidate">Candidate</option>
-                <option value="recruiter">Recruiter</option>
-              </select>
-            </label>
-          )}
-          {kind === 'recruiter' && !candidateOnly && (
-            <label>
-              Company
-              <input name="company" maxLength={120} placeholder="Your company" required />
-            </label>
-          )}
-        </>
-      )}
-      <label>
-        Email
-        <input
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          placeholder="you@example.com"
-        />
-      </label>
-      <label>
-        Password
-        <input
-          name="password"
-          type="password"
-          autoComplete={register ? 'new-password' : 'current-password'}
-          minLength={register ? 8 : 1}
-          maxLength={128}
-          required
-          placeholder={register ? 'At least 8 characters' : 'Your password'}
-        />
-      </label>
-      <ErrorMessage message={error} />
-      <SubmitButton busy={busy}>{register ? 'Create account' : 'Sign in'}</SubmitButton>
-    </form>
+          </Field>
+          <ErrorMessage message={error} />
+          <SubmitButton busy={busy}>
+            {mode === 'register' ? 'Create account' : 'Sign in'}
+          </SubmitButton>
+        </form>
+      </TabsContent>
+    </Tabs>
   );
 }
-
 export default function Entry() {
   const auth = useAuth();
   const navigate = useNavigate();
+  const [mode, setMode] = useState('demo');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [showAuth, setShowAuth] = useState(false);
   if (auth.loading) return <Loading />;
   if (auth.user)
     return <Navigate to={auth.user.kind === 'recruiter' ? '/workspace' : '/profile'} replace />;
@@ -134,104 +128,56 @@ export default function Entry() {
     }
   };
   return (
-    <main className="entry">
-      <section className="entry-story">
-        <Brand light />
-        <div className="entry-copy">
-          <span className="eyebrow light-eyebrow">THE CONVERSATION IS JUST THE START</span>
-          <h1>
-            Good people.
-            <br />
-            Great conversation.
-            <br />
-            <em>Then what?</em>
-          </h1>
-          <p>
-            Keep the spark of an in-person connection.
-            <br />
-            Find it again when the right role opens.
+    <main className="auth-page">
+      <header>
+        <Brand />
+      </header>
+      <section className="auth-card">
+        <div className="mb-7">
+          <h1 className="text-2xl font-semibold tracking-tight">again-hr</h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            In-person recruiting workflow prototype.
           </p>
-          <div className="memory-preview">
-            <div className="preview-top">
-              <Avatar name="Aisha Patel" />
-              <div>
-                <strong>Aisha Patel</strong>
-                <span>Met at the NYU career fair</span>
-              </div>
-              <span className="preview-icon">
-                <Sprout size={20} />
-              </span>
-            </div>
-            <Quote size={20} />
-            <p>
-              “The CRISPR researcher who figured out why the editing results weren't reproducible.”
-            </p>
-            <div className="preview-footer">
-              <span>
-                <FileCheck2 size={14} /> Context, with the work behind it.
-              </span>
-              <ArrowRight size={17} />
-            </div>
-          </div>
         </div>
-        <span className="entry-foot">A little context. A more human way to hire.</span>
-      </section>
-      <section className="entry-actions">
-        <div className="entry-form">
-          <span className="eyebrow">PICK UP WHERE YOU LEFT OFF</span>
-          <h2>
-            A good connection
-            <br />
-            deserves a next chapter.
-          </h2>
-          <p className="muted">
-            One place for the people you met, what stood out, and the work worth remembering.
-          </p>
-          {!showAuth && auth.demoMode ? (
-            <>
-              <button className="entry-option" disabled={!!busy} onClick={() => enter('recruiter')}>
-                <span className="option-icon">
-                  <Users size={23} />
-                </span>
-                <span>
-                  <strong>{busy === 'recruiter' ? 'Opening…' : 'Explore as a recruiter'}</strong>
-                  <small>Meet your next hire, again.</small>
-                </span>
-                <ArrowRight size={20} />
-              </button>
-              <button className="entry-option" disabled={!!busy} onClick={() => enter('candidate')}>
-                <span className="option-icon">
-                  <ScanLine size={23} />
-                </span>
-                <span>
-                  <strong>{busy === 'candidate' ? 'Opening…' : 'Explore as a candidate'}</strong>
-                  <small>Give a great conversation somewhere to live.</small>
-                </span>
-                <ArrowRight size={20} />
-              </button>
-              <div className="demo-note">
-                <span className="status-dot" />
-                Interactive demo · Fictional people and materials
-              </div>
-              <button className="text-button entry-signin" onClick={() => setShowAuth(true)}>
-                Or create your own account / sign in <ArrowRight size={15} />
-              </button>
-            </>
-          ) : (
-            <>
-              <AuthForm
-                onDone={(user) => navigate(user.kind === 'recruiter' ? '/workspace' : '/profile')}
-              />
-              {auth.demoMode && (
-                <button className="text-button" onClick={() => setShowAuth(false)}>
-                  Back to the demo
-                </button>
-              )}
-            </>
-          )}
-          <ErrorMessage message={error || auth.error} />
-        </div>
-        <span className="entry-bottom">Built around a real conversation. Kept in your hands.</span>
+        {auth.demoMode && mode === 'demo' ? (
+          <>
+            <div className="space-y-3">
+              {(['recruiter', 'candidate'] as const).map((kind) => (
+                <Button
+                  key={kind}
+                  variant="outline"
+                  disabled={!!busy}
+                  onClick={() => enter(kind)}
+                  className="auth-option"
+                >
+                  <span className="auth-option-icon">
+                    {kind === 'recruiter' ? <BriefcaseBusiness /> : <UserRound />}
+                  </span>
+                  <span className="flex-1 text-left capitalize">{kind} workspace</span>
+                  {busy === kind ? <Loader2 className="animate-spin" /> : <ArrowRight />}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between mt-6">
+              <Badge variant="secondary">Demo data</Badge>
+              <Button variant="link" size="sm" onClick={() => setMode('account')}>
+                Use your account <ArrowRight />
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <AuthForm
+              onDone={(user) => navigate(user.kind === 'recruiter' ? '/workspace' : '/profile')}
+            />
+            {auth.demoMode && (
+              <Button variant="ghost" className="w-full mt-4" onClick={() => setMode('demo')}>
+                Back to demo
+              </Button>
+            )}
+          </>
+        )}
+        <ErrorMessage message={error || auth.error} />
       </section>
     </main>
   );

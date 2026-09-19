@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { retrieveEvidence } from './evidence.mjs';
 
 const stop = new Set(
   'a an the and or of in on to for with from my i we our is was are this that as by at work experience skills knowledge ability preferred required practical hands hands-on good strong'.split(
@@ -38,40 +39,18 @@ export function sourcesFor(profile, connection, materials) {
       })),
   ].filter((s) => s.text.trim());
 }
-export function localBrief(profile, connection, role, sources) {
-  const findings = role.requirements.map((requirement) => {
-    const needles = terms(requirement);
-    let best;
-    let bestCount = 0;
-    // Prefer supporting work over the profile when keyword coverage is equal.
-    const evidenceFirst = [...sources].sort(
-      (a, b) =>
-        Number(['profile', 'conversation'].includes(a.id)) -
-        Number(['profile', 'conversation'].includes(b.id)),
-    );
-    for (const source of evidenceFirst) {
-      for (const excerpt of source.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)) {
-        const hay = new Set(terms(excerpt));
-        const matches = needles.filter((t) => hay.has(t)).length;
-        const count = matches ? matches + (excerpt.split(/\s+/).length >= 9 ? 0.1 : 0) : 0;
-        if (count > bestCount) {
-          best = { sourceId: source.id, quote: excerpt };
-          bestCount = count;
-        }
-      }
-    }
-    return {
-      requirement,
-      ...(best || {}),
-      note: best
-        ? 'Related words appear in this passage. Read the source to assess the experience.'
-        : 'No related passage found by local term matching. This may miss relevant experience.',
-    };
-  });
+export async function localBrief(profile, connection, role, sources) {
+  const { findings } = await retrieveEvidence(role.requirements, sources);
   return {
     mode: 'local',
+    engine: 'rust',
     summary: `${profile.name} shared this conversation: ${connection.highlight || connection.conversation.slice(0, 180)}`,
-    findings,
+    findings: findings.map((finding) => ({
+      ...finding,
+      note: finding.quote
+        ? 'Related words appear in this passage. Read the source to assess the experience.'
+        : 'No related passage found by local term matching. This may miss relevant experience.',
+    })),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -141,7 +120,7 @@ export async function buildBrief({
   config,
   fetchImpl = fetch,
 }) {
-  const local = localBrief(profile, connection, role, sources);
+  const local = await localBrief(profile, connection, role, sources);
   if (!config.apiKey) return local;
   const promptSources = promptSourcesFor(sources, role);
   const key = createHash('sha256')

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import QRCode from 'qrcode';
 import { openDatabase, seedDemo, uid, hashPassword, checkPassword, parse } from './db.mjs';
 import { sourcesFor, buildBrief } from './briefs.mjs';
+import { workflowChanges, applyWorkflow, connectionsCsv } from './workflow.mjs';
 
 const short = z.string().trim().min(1).max(180);
 const link = z.object({
@@ -33,7 +34,14 @@ const connectionSchema = z.object({
 });
 const digest = (token) => createHash('sha256').update(token).digest('hex');
 const safeMaterial = ({ path, ...material }) => material;
-const stripPrivate = ({ remembered, saved, ...connection }) => connection;
+const stripPrivate = ({
+  remembered,
+  saved,
+  stage,
+  shortlistedRoles,
+  recruiterUpdatedAt,
+  ...connection
+}) => connection;
 
 export function createApp(options = {}) {
   const dataDir = resolve(options.dataDir || process.env.DATA_DIR || 'data');
@@ -431,16 +439,69 @@ export function createApp(options = {}) {
   app.patch('/api/workspace/connections/:id', auth('recruiter'), (req, res) => {
     const connection = ownedConnection(req, res);
     if (!connection) return;
-    const changes = z
-      .object({ remembered: z.boolean().optional(), saved: z.boolean().optional() })
-      .strict()
-      .parse(req.body);
-    const updated = { ...connection, ...changes };
+    const changes = workflowChanges.parse(req.body);
+    if (
+      changes.roleId &&
+      !db
+        .prepare('SELECT id FROM roles WHERE id=? AND recruiter_id=?')
+        .get(changes.roleId, req.user.id)
+    )
+      return res.status(404).json({ error: 'Role not found.' });
+    const updated = applyWorkflow(connection, changes);
     db.prepare('UPDATE connections SET data=? WHERE id=?').run(
       JSON.stringify(updated),
       connection.id,
     );
     res.json({ connection: expand(updated) });
+  });
+  app.patch('/api/workspace/connections', auth('recruiter'), (req, res) => {
+    const { ids, changes } = z
+      .object({ ids: z.array(z.string()).min(1).max(500), changes: workflowChanges })
+      .parse(req.body);
+    const unique = [...new Set(ids)];
+    const connections = unique.map((id) =>
+      parse(
+        db
+          .prepare('SELECT data FROM connections WHERE id=? AND recruiter_id=?')
+          .get(id, req.user.id),
+      ),
+    );
+    if (connections.some((c) => !c))
+      return res.status(404).json({ error: 'Connection not found.' });
+    if (
+      changes.roleId &&
+      !db
+        .prepare('SELECT id FROM roles WHERE id=? AND recruiter_id=?')
+        .get(changes.roleId, req.user.id)
+    )
+      return res.status(404).json({ error: 'Role not found.' });
+    const updated = connections.map((c) => applyWorkflow(c, changes));
+    db.exec('BEGIN');
+    try {
+      for (const c of updated)
+        db.prepare('UPDATE connections SET data=? WHERE id=?').run(JSON.stringify(c), c.id);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    res.json({ connections: updated.map(expand) });
+  });
+  app.post('/api/workspace/export', auth('recruiter'), (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.string()).min(1).max(500) }).parse(req.body);
+    const connections = [...new Set(ids)].map((id) =>
+      parse(
+        db
+          .prepare('SELECT data FROM connections WHERE id=? AND recruiter_id=?')
+          .get(id, req.user.id),
+      ),
+    );
+    if (connections.some((c) => !c))
+      return res.status(404).json({ error: 'Connection not found.' });
+    res
+      .type('text/csv')
+      .set('Content-Disposition', 'attachment; filename="again-hr-connections.csv"')
+      .send(connectionsCsv(connections.map(expand)));
   });
   app.post('/api/workspace/connections/:id/brief', auth('recruiter'), async (req, res) => {
     const connection = ownedConnection(req, res);

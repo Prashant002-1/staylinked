@@ -1,71 +1,71 @@
-# Again
+# again-hr
 
-Good conversations go somewhere.
+An engineering prototype for retaining context from in-person recruiting conversations. The name is a placeholder.
 
-A recruiter meets someone worth remembering. A QR connects them. The candidate writes the recap and shares their work. When a role opens, the recruiter can pick up the conversation with the relevant evidence in view.
+The starting problem: a recruiter can remember a candidate's specific project after a career fair, yet lose the connection between that conversation, the person's work, and a role that opens later. Requiring the recruiter to write detailed notes after every interaction adds another task to an already crowded day.
 
-Built as a working prototype for the **Trust in the Hiring Funnel** hackathon in New York. This explores the incoming-candidate problem through relationship context and sourced work, rather than applicant scores.
+This project moves the initial recap to the candidate. An event QR leads to a short form; the candidate records what they discussed and adds work to a reusable profile. The recruiter gets a searchable workspace with the conversation beside the person, then can inspect source passages for a role, shortlist connections, and export them. It was started for an HR hackathon and is maintained here as a development and portfolio project.
 
-## Run it
+## What is different about this implementation
 
-Requires **Node.js 24 or later** and npm.
+- **The encounter is a record, not a tag on a résumé.** The event, original recap, current recap, and candidate-owned materials stay connected. Editing a recap preserves the original submission.
+- **Context comes from the candidate.** Recruiters can use an event QR without writing a note for each person. This is a workflow hypothesis, not a measured claim of time saved.
+- **The role view shows passages, not scores.** A small Rust program matches words in requirements to text the candidate supplied. Every result points to an exact source quotation. It does not rank people or infer qualifications.
+- **The handoff is concrete.** Role shortlists, follow-up status, batch actions, and spreadsheet export persist on the backend. Planned ATS and communication connectors are separate from these working actions.
+- **Ownership crosses the whole flow.** A candidate can update shared work or remove a connection. Download and workspace routes check access server-side; private recruiter status is omitted from candidate responses.
+
+## Run locally
+
+Requires **Node.js 24+**, npm, and a **stable Rust toolchain** with Cargo. Install Rust using [rustup](https://rustup.rs/).
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open [localhost:5173](http://localhost:5173). Choose a recruiter or candidate demo. All seeded people, companies, encounters, and research materials are fictional. You can also create your own local account.
+`dev` builds the small Rust binary, then starts Express with Vite middleware. Open [localhost:5173](http://localhost:5173). Choose **Recruiter workspace** or **Candidate workspace** to use fictional demo data. Separate browsers or a phone provide independent sessions; switching demos in one browser replaces that browser's session.
 
-No API key is needed to use the prototype. Data persists in `data/again.sqlite`; uploads stay in `data/uploads/`. Both are excluded from Git.
-
-For the built version:
+No model API key is required. Profiles and workflow state persist in `data/again.sqlite`; uploads stay in `data/uploads/`. These paths and `.env` are ignored by Git.
 
 ```sh
-npm run build
-npm start
+npm run build   # Rust release binary + TypeScript + Vite
+npm start       # serve the built application
+npm run check   # build, Rust tests/fmt/Clippy, HTTP workflow tests
+npm run format:check
 ```
 
-## What works
+## Architecture
 
-- Recruiter workspaces, event portals, real QR codes, and candidate accounts.
-- Candidate-authored conversation recaps with the original submission preserved.
-- Reusable profiles, project notes, external links, and PDF/TXT/Markdown uploads.
-- Search by name, conversation, or extracted work; filter by event or saved people.
-- Role-specific source passages, including gaps in the supplied material.
-- Recruiter acknowledgment, saved connections, and an email link to their own mail client.
-- Fresh work indicators when a candidate adds material after meeting.
-- Candidate removal of materials and connections, with access checks on every private file.
-- Server-side OpenCode Go adapter with citation validation, caching, and an explicit local fallback.
-
-The application sends no email. The recruiter decides whether to reach out and writes the message themselves.
-
-## A two-minute demonstration
-
-1. Enter **Explore as a recruiter**. Open Aisha's connection and the CRISPR conversation.
-2. Click **Share your QR**. Scan it on a phone using the same Wi-Fi as the laptop. Create a candidate account, write a memorable detail and a short recap, and save the connection.
-3. Add a project note or PDF in the candidate workspace. Return to the recruiter and click Refresh, or refocus the window.
-4. Find the new connection. Select **Research Lab Technician** and open a cited source. Show exactly what was supplied and what remains unknown.
-5. Switch to **Research Software Engineer**, open Jun, and show how the work in view changes with the role.
-6. Add a new role to demonstrate rediscovery later. Save the person or open the email link to continue the relationship.
-
-For a one-computer demonstration, use **Open portal** in the QR dialog. If you are already signed in as a recruiter, the portal offers a candidate demo or sign-out option. Demo-side switches share the same browser session. Use a separate browser or a phone for simultaneous independent sessions.
-
-### Phone QR links
-
-On macOS, the server uses the active `en0`/`en1` IPv4 address for a QR opened from localhost. For other networks or platforms, set the address explicitly:
-
-```sh
-cp .env.example .env
+```text
+React + TypeScript
+  shadcn/ui / Base UI, Geist, Tailwind
+          │ same-origin requests + session cookie
+Express + SQLite + private local files
+          ├── PDF / text extraction
+          ├── Rust passage lookup (JSON stdin/stdout)
+          └── optional OpenCode Go summary
 ```
 
-Set `PUBLIC_URL=http://YOUR-LAPTOP-LAN-IP:5173` in `.env` and restart. Phone and laptop must be on a network that allows devices to reach one another. An event network with client isolation may require a hotspot or a separately hosted instance. The portal also exposes a copyable link.
+The web server owns authentication, persistence, resource access, QR creation, and uploads. Rust owns the deterministic passage lookup. The binary has no network or database access in its implementation. Node invokes it asynchronously without a shell, with an input limit, output limit, and timeout. It then checks that every quoted result exists in the supplied source.
 
-## Add OpenCode Go later
+The retrieval algorithm is deliberately small: tokenize text, normalize a short explicit list of word forms, compare whole words, and select a passage with the most matching terms. Ties favor uploaded work over the profile or recap, then preserve source order. There is no embedding model, vector database, retrieval service, or index to maintain. This implementation makes **no performance claim** over JavaScript; Rust provides a narrow, testable processing boundary and practical experience with Serde, borrowing, errors, and process integration.
 
-The [official OpenCode Go endpoint documentation](https://opencode.ai/v2/docs/console/go) lists model-specific protocols. Again uses the **OpenAI-compatible Chat Completions** route, not the OpenCode CLI or an OpenAI API key.
+The optional model adapter uses a direct HTTP request. It is not responsible for the underlying connection workflow. [Architecture and tradeoffs](docs/architecture.md) covers the contracts and limits; [design system](docs/design-system.md) records the interface decisions.
 
-Set these server-only values in `.env`:
+## Walk through the workflow
+
+1. Open the recruiter workspace. Search for **CRISPR** and open **Aisha Patel**.
+2. Read the event recap, choose a role under **Role evidence**, and open the cited material. **Text matches** is the local Rust path.
+3. Add the connection to a role shortlist or mark it **Follow-up**. Select multiple rows to change status, save, shortlist, or export together.
+4. Open **Share QR** and preview the candidate portal. A candidate can submit a recap, edit their profile, and add a project note or file.
+5. Return to the recruiter window or reload it. The updated work is available on the existing connection.
+6. Open **Integrations**. CSV export works. Cards marked **Planned** are workflow sketches, not live connections.
+
+For phone testing, use the same Wi-Fi. The local QR chooses the laptop's active `en0`/`en1` IPv4 address on macOS. You can set `PUBLIC_URL=http://YOUR-LAPTOP-LAN-IP:5173` in `.env` for another network setup. The network must allow devices to reach each other. See the [manual verification guide](docs/demo.md).
+
+## Optional OpenCode Go
+
+The [OpenCode Go documentation](https://opencode.ai/v2/docs/console/go) lists model-specific protocols. This adapter uses its OpenAI-compatible **Chat Completions** endpoint.
 
 ```dotenv
 OPENCODE_API_KEY=your-key-here
@@ -73,34 +73,24 @@ OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1
 OPENCODE_MODEL=glm-5.2
 ```
 
-Restart the server. You can change the model to another Go model supporting `/chat/completions`. Models that only support `/messages` or `/responses` need a different adapter.
+Copy `.env.example` to `.env`, set server-only values, and restart. An OpenAI key is not needed. The configured model must support `/chat/completions`.
 
-Without a key, the role view is labeled **Local source matches**. It uses keyword matching and light word normalization, not AI reasoning, qualification judgments, or scores. It can surface negated claims or expressions of interest; read the quoted passage. With a key, candidate-provided source text for the selected person and the selected role is sent to OpenCode Go when the recruiter opens that brief. The key never reaches the browser.
+With a key, opening a role view sends candidate-provided source excerpts for that person and role to OpenCode Go. The request is capped at 40,000 source characters, with up to 4,500 per source. The key stays on the server. Source IDs, verbatim quotations, and requirement coverage are validated before a generated response is displayed. Cache keys include the role, materials, recap, model, and endpoint. Invalid output, provider failure, or a 25-second timeout returns labeled local matches.
 
-AI findings must cite a supplied source and include a verbatim excerpt that exists in it. Invalid responses, provider errors, or a 25-second timeout fall back to labeled local matches. Briefs are cached by role, candidate material, and model. A request includes at most 40,000 characters of source excerpts, with up to 4,500 per source, to bound cost and latency. The brief covers those supplied excerpts, not a guaranteed exhaustive reading of every document. A live provider call has not been verified because the key will be supplied later. Adapter tests use controlled responses and failure cases.
+**Live provider verification is pending a key.** Request format, caching, malformed responses, unsupported citations, and failure behavior are tested with controlled responses.
 
-## Verification
+## Tests and constraints
 
-```sh
-npm run check
-npm run format:check
-```
+Rust tests cover exact Unicode passages, whole-word boundaries, limited word normalization, deterministic ties, negation preservation, and input limits. Node tests exercise the Rust binary through the real HTTP flow, plus sessions, decoded QR destinations, persistence, PDF extraction, ownership, access revocation, batch atomicity, role ownership, private state, CSV escaping, and the provider adapter. Each HTTP test fixture has its own temporary database and upload directory.
 
-The test suite exercises registration and sessions, exact QR decoding, the candidate-to-recruiter flow, persistent records, upload/download access, original recap preservation, multiple roles/events, revocation, cross-origin rejection, provider request shape, cache invalidation, invalid citations, and provider failures. Tests use isolated temporary databases.
+This remains a local prototype. Demo accounts are shared and intended for fictional data. There is no email verification, password reset, upload malware scanning, OCR, audit log, pagination, or production deployment. A submitted recap is not proof that a meeting occurred. Literal word matching misses synonyms and can surface negated claims or learning interests; an exact citation verifies the text's source, not the claim's truth. The application sends no email and makes no hiring decisions.
 
-## Implementation
+`DEMO_MODE=false` disables demo access and seed creation for a new database. It does not erase existing demo data; use a fresh `DATA_DIR` for a separate instance.
 
-- **React + TypeScript + Vite:** responsive list/detail recruiter workspace and mobile candidate flow.
-- **Express + Node SQLite:** a small server with on-disk persistence, scrypt password hashes, and HTTP-only session cookies.
-- **Local file storage + PDF parsing:** text extraction for the first 30 PDF pages, capped at 60,000 characters. Image-only or unreadable PDFs remain downloadable and are labeled as needing a supporting note. No OCR.
-- **OpenCode Go:** a direct server-side API adapter, with no provider SDK required.
+## Further reading
 
-See [product decisions](docs/product.md), [the demo and pitch](docs/demo.md), and [market research](exa-results/networking-trust-2026-09-19.md).
-
-## Prototype boundaries
-
-This is a local demonstration, not a production recruiting system. Demo accounts are intentionally shared and one-click accessible. Use fictional data in them. `DEMO_MODE=false` disables demo access and seeding for a new database. Existing demo data remains on disk; use a fresh `DATA_DIR` for an independent instance.
-
-There is no email verification, password recovery, malware scanning, consent audit, ATS integration, or identity/claim verification. A submitted recap is not proof of an encounter. A recruiter's “I remember this” acknowledgment is not an endorsement or hiring decision. Candidate updates do not guarantee a reply. Uploaded material and summaries are candidate-provided or generated, not independently verified facts.
-
-The public repository contains code and fictional seed data. It does not publish local profiles, uploads, session data, or API keys.
+- [Problem and scope](docs/product.md)
+- [Architecture and tradeoffs](docs/architecture.md)
+- [Design system and avatar credits](docs/design-system.md)
+- [Manual verification](docs/demo.md)
+- [Market and relationship research](exa-results/networking-trust-2026-09-19.md)

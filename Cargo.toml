@@ -1,0 +1,17 @@
+[package]
+name = "again-evidence"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lib]
+path = "rust/src/lib.rs"
+
+[[bin]]
+name = "again-evidence"
+path = "rust/src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

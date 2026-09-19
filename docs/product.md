@@ -1,38 +1,34 @@
-# Again
+# Problem and scope
 
-Good conversations go somewhere.
+`again-hr` is a temporary name for a prototype built around the information lost between an in-person conversation and a later recruiting decision.
 
-## The product promise
+## Scenario
 
-A recruiter shares a QR after a meaningful conversation. The candidate supplies the memory and evidence. When a role opens, the recruiter can find the person, recall the encounter, and inspect relevant work without reconstructing the relationship from an inbox.
+A candidate and recruiter discuss CRISPR delivery at a university career fair. The recruiter has a reason to remember this person beyond a résumé. Weeks later, a lab role opens. The useful record is the conversation, the candidate's relevant work, and how to contact them.
 
-## Prototype decisions
+A résumé scanner does not capture that encounter. A contact exchange alone does not retain what made it relevant. Existing recruiting CRMs and networking tools already address parts of this problem; this prototype explores a particular division of effort and record structure, without claiming the category is new.
 
-- Recruiter shares one event portal. No installation or account is needed just to see it. Candidates create a password-protected profile before submitting or use the fictional demo profile.
-- A connection contains candidate-authored conversation context, the event, a timestamp, and the original submission. It is a reported encounter until the recruiter acknowledges remembering it. A QR scan proves neither attendance nor endorsement.
-- Profile, text notes, links, and PDF/text uploads remain candidate-owned. Updates appear on existing connections. Original encounter context stays visible.
-- Recruiter can search, filter by event and saved people, acknowledge a conversation, and save someone for later. No requirement to write notes.
-- A role lens maps requirements to cited excerpts. The default local mode uses literal term matching, clearly labeled. Optional OpenCode Go summaries use the same source contract. Neither mode ranks people or makes a hiring recommendation.
-- Recruiter composes contact in their own email client. Again sends no messages automatically.
-- The demo includes fictional lab-research and engineering profiles so changing roles meaningfully changes the evidence surfaced.
+## Design decisions
 
-## Deliberately outside this demo
+| Problem                                                 | Implemented choice                                                      | Remaining limitation                                           |
+| ------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Recruiter cannot write notes on every person            | Candidate records the recap after scanning an event QR                  | Candidate must complete a short form and authenticate          |
+| A useful interaction becomes difficult to reconstruct   | Preserve the event, original recap, current recap, and shared materials | Candidate-authored context is not proof of attendance          |
+| A new role changes what matters                         | Show exact source passages for selected role requirements               | Literal matching misses meaning and synonyms                   |
+| Existing recruiting systems remain the system of record | Persist shortlists/status and export selected connections to CSV        | ATS-specific import mapping and live sync are not built        |
+| Candidate work changes after the event                  | Reusable profile and materials feed existing connections                | No email or push notification system                           |
+| Data should remain under the candidate's control        | Authenticated updates, removal, and server-side access checks           | Another connection with the same recruiter still grants access |
 
-Lie detection, identity verification, applicant scores, autonomous outreach, live ATS integrations, scraped LinkedIn data, external link verification, and behavior-based inference. No claim of measured time savings until a pilot measures it.
+## Working scope
 
-## Technology
+Recruiter workspace: searchable connections, event/status filters, new/updated views, saved records, follow-up queue, role-specific shortlists, batch actions, CSV export, event creation, and QR sharing.
 
-React + TypeScript + Vite for the interface. Express and Node SQLite for a small single-process server. Uploaded material stays on local disk outside the public folder. Session cookies and per-resource ownership checks protect both sides. Server-side OpenCode Go integration can be enabled later without rebuilding the UI.
+Candidate workspace: profile, links, skills, project notes, PDF/TXT/Markdown uploads, connection recaps, updates, and removal.
 
-## Design
+Evidence: a Rust executable for bounded word matching, plus an optional OpenCode Go adapter. Both return sources. Neither assigns candidate confidence, ranks people, verifies identity, or decides whom to contact.
 
-Warm editorial utility: forest green, pale citrus, warm paper, a readable humanist sans, restrained serif headings. Desktop prioritizes an efficient list-detail workspace; mobile prioritizes the candidate's one-minute connection and durable profile.
+## Questions for a small usability study
 
-## Demonstration
+Can candidates record the useful detail without rewriting their résumé? Can recruiters locate a remembered person weeks later? Does source visibility help them assess a role without reading every file? Does the CSV handoff fit their existing process?
 
-1. Enter the recruiter demo and display the event QR.
-2. Open the candidate portal on a phone or the included preview link.
-3. Create a candidate profile, capture a memorable CRISPR conversation, and upload supporting material.
-4. Return to the recruiter workspace and find the new connection.
-5. Select a lab role, view cited relevant material, then switch to an engineering role to demonstrate what changes.
-6. Save the candidate and open a human-written email in the recruiter's mail app.
+Measure time on those tasks and observe errors. No measured recruiting outcome, time saving, or trust improvement is claimed by this repository.

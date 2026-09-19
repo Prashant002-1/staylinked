@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy, ExternalLink, MapPin } from 'lucide-react';
-import { api, date, json } from './api';
-import { ErrorMessage, Loading, Modal, SubmitButton } from './ui';
+import { Check, Copy, ExternalLink } from 'lucide-react';
+import { api, json } from './api';
+import { Choice, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import type { Event, Role } from './types';
 
 export function ShareQR({
@@ -23,7 +26,7 @@ export function ShareQR({
     setCopied(false);
     setError('');
     if (eventId)
-      api<{ image: string; url: string; localOnly: boolean }>(`/events/${eventId}/qr`)
+      api<NonNullable<typeof qr>>(`/events/${eventId}/qr`)
         .then((data) => {
           if (active) setQr(data);
         })
@@ -34,76 +37,66 @@ export function ShareQR({
       active = false;
     };
   }, [eventId]);
-  const event = events.find((e) => e.id === eventId);
   return (
-    <Modal title="Keep this conversation going." onClose={onClose}>
-      <p className="muted">Let them scan. They add the context, you get the connection.</p>
-      <label className="standalone-label">
-        Your event
-        <select value={eventId} onChange={(e) => setEventId(e.target.value)}>
-          {events.map((e) => (
-            <option value={e.id} key={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </select>
-      </label>
+    <Modal title="Share event QR" onClose={onClose}>
+      <Choice
+        label="Event"
+        value={eventId}
+        onChange={setEventId}
+        options={events.map((e) => ({ value: e.id, label: e.name }))}
+        className="w-full"
+      />
       {qr ? (
         <>
-          <div className="qr-sheet">
-            <span className="eyebrow">NICE TO MEET YOU.</span>
+          <div className="qr-display">
             <img
               src={qr.image}
-              alt={`Scan to connect at ${event?.name}`}
+              alt={`QR code for ${events.find((e) => e.id === eventId)?.name}`}
               width="240"
               height="240"
             />
-            <h3>Let's remember this.</h3>
-            <span>{event?.name}</span>
-            <small>
-              <MapPin size={13} />
-              {event?.location} · {event && date(event.date)}
-            </small>
           </div>
-          <div className="qr-actions">
-            <button
-              className="button secondary"
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 h-9"
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(qr.url);
                   setCopied(true);
                 } catch {
-                  setError('Copy is unavailable here. Select the link below to copy it.');
+                  setError('Select the link below to copy it.');
                 }
               }}
             >
-              {copied ? <Check size={16} /> : <Copy size={16} />}{' '}
-              {copied ? 'Link copied' : 'Copy link'}
-            </button>
-            <a
-              className="button secondary"
-              href={`/connect/${eventId}`}
-              target="_blank"
-              rel="noreferrer"
+              {copied ? <Check /> : <Copy />}
+              {copied ? 'Copied' : 'Copy link'}
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1 h-9"
+              render={<a href={`/connect/${eventId}`} target="_blank" rel="noreferrer" />}
+              nativeButton={false}
             >
-              Open portal <ExternalLink size={15} />
-            </a>
+              Preview
+              <ExternalLink />
+            </Button>
           </div>
-          <input
-            className="copy-url"
+          <Input
             value={qr.url}
             aria-label="Connection link"
             readOnly
             onFocus={(e) => e.target.select()}
+            className="text-xs text-muted-foreground"
           />
-          <p className="fine-print">
+          <p className="text-xs text-muted-foreground">
             {qr.localOnly
-              ? 'This link opens on this computer. Set PUBLIC_URL in .env to your laptop’s Wi-Fi address for phone scans.'
-              : 'For this local demo, connect the phone and laptop to the same Wi-Fi. Keep the server running.'}
+              ? 'Local preview. This link opens on this computer.'
+              : 'Local preview. Phones must use the same Wi-Fi as this computer.'}
           </p>
         </>
       ) : (
-        <Loading text="Preparing your QR code…" />
+        <Loading />
       )}
       <ErrorMessage message={error} />
     </Modal>
@@ -119,11 +112,7 @@ export function NewRole({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return (
-    <Modal title="A new role. A familiar face?" onClose={onClose}>
-      <p className="muted">
-        Add the role and the experience you want to explore. Again connects each requirement to the
-        work people shared.
-      </p>
+    <Modal title="Add role" onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={async (e) => {
@@ -150,37 +139,30 @@ export function NewRole({
           }
         }}
       >
-        <label>
-          Role title
-          <input name="title" required maxLength={180} placeholder="Research Lab Technician" />
-        </label>
-        <label>
-          Team or location
-          <input name="team" maxLength={180} placeholder="Gene editing · New York" />
-        </label>
-        <label>
-          Job description
-          <textarea
-            name="description"
-            required
-            minLength={20}
-            maxLength={10000}
-            rows={4}
-            placeholder="What will this person work on?"
-          />
-        </label>
-        <label>
-          Experience to explore{' '}
-          <span className="field-hint">One requirement per line, up to 12.</span>
-          <textarea
+        <Field label="Title">
+          <Input name="title" required maxLength={180} placeholder="Research Lab Technician" />
+        </Field>
+        <Field label="Team / location">
+          <Input name="team" maxLength={180} placeholder="Gene editing · New York" />
+        </Field>
+        <Field label="Job description">
+          <Textarea name="description" required minLength={20} maxLength={10000} rows={4} />
+        </Field>
+        <Field label="Requirements" hint="One per line. Up to 12.">
+          <Textarea
             name="requirements"
             required
             rows={4}
             placeholder={'CRISPR\nMammalian cell culture\nDNA extraction and PCR'}
           />
-        </label>
+        </Field>
         <ErrorMessage message={error} />
-        <SubmitButton busy={busy}>Add role</SubmitButton>
+        <div className="form-actions">
+          <Button variant="outline" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <SubmitButton busy={busy}>Add role</SubmitButton>
+        </div>
       </form>
     </Modal>
   );
@@ -195,8 +177,7 @@ export function NewEvent({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return (
-    <Modal title="Make room for good conversations." onClose={onClose}>
-      <p className="muted">One QR for your event. A personal recap from every candidate.</p>
+    <Modal title="Create event" onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={async (e) => {
@@ -217,28 +198,24 @@ export function NewEvent({
           }
         }}
       >
-        <label>
-          Event name
-          <input name="name" required maxLength={180} placeholder="University career fair" />
-        </label>
+        <Field label="Event name">
+          <Input name="name" required maxLength={180} placeholder="University career fair" />
+        </Field>
         <div className="form-row">
-          <label>
-            Location
-            <input name="location" maxLength={180} placeholder="Brooklyn, NY" />
-          </label>
-          <label>
-            Date
-            <input
+          <Field label="Location">
+            <Input name="location" maxLength={180} placeholder="New York, NY" />
+          </Field>
+          <Field label="Date">
+            <Input
               name="date"
               type="date"
               defaultValue={new Date().toISOString().slice(0, 10)}
               required
             />
-          </label>
+          </Field>
         </div>
-        <label>
-          The question candidates answer
-          <textarea
+        <Field label="Conversation prompt">
+          <Textarea
             name="prompt"
             required
             minLength={10}
@@ -246,9 +223,14 @@ export function NewEvent({
             rows={3}
             defaultValue="What did we talk about? Share the detail you would like me to remember."
           />
-        </label>
+        </Field>
         <ErrorMessage message={error} />
-        <SubmitButton busy={busy}>Create event & QR</SubmitButton>
+        <div className="form-actions">
+          <Button variant="outline" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <SubmitButton busy={busy}>Create event</SubmitButton>
+        </div>
       </form>
     </Modal>
   );

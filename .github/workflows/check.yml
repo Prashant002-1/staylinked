@@ -11,6 +11,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - run: rustup update stable --no-self-update
+      - run: rustup component add rustfmt clippy
       - run: npm ci
       - run: npm run check
       - run: npm run format:check

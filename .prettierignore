@@ -4,3 +4,7 @@ data
 artifacts
 package-lock.json
 exa-results
+
+.tools/
+target/
+Cargo.lock

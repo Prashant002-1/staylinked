@@ -1,37 +1,36 @@
-# The demonstration
+# Manual verification guide
 
-## The 20-second pitch
+Use fictional data. Run `npm run check`, then `npm start`. The page title and placeholder name are `again-hr`.
 
-At a career fair, a candidate tells you about a project that is exactly the kind of work your team needs. A month later, you remember the conversation but cannot find the person. Again keeps that connection useful: the candidate scans your QR, supplies the memory and the work behind it, and you come back to a concise, sourced view when a role opens.
+## Recruiter workflow
 
-## The product advantage
+1. Choose **Recruiter workspace**. Confirm that six seeded connections load.
+2. Search **CRISPR**. Open Aisha's profile; confirm that the event and candidate recap appear first.
+3. Select **Research Lab Technician** under **Role evidence**. Open a quoted source and confirm that the passage appears verbatim.
+4. Choose a different role. Confirm that the requirements and passages change. Missing text must not become a qualification judgment.
+5. Add the person to a role shortlist, close the panel, and open **Roles**. The shortlist count and filtered connections should agree after reload.
+6. Select two rows. Set their status to **Follow-up**, save them, and export. Confirm that only selected records appear in the CSV.
+7. Open **Follow-up** and **Saved**. Confirm the backend state survives a reload.
 
-The advantage is less work to preserve a useful relationship. The candidate contributes the detail while it is fresh; the recruiter does not write notes on hundreds of people. The next review starts from the conversation and the relevant work, not another generic application.
+## Candidate workflow
 
-The QR itself is ordinary. The valuable part is the lasting link between an encounter, candidate-owned evidence that can evolve, and the context of a future role. AI helps organize that link, but the workflow remains useful without it.
+1. Open **Share QR** and select an event. Decode the QR or use **Preview**.
+2. On a separate browser or phone, create a candidate account and submit a specific recap. A single browser shares its session; use the portal's demo switch for a one-browser check.
+3. In **Profile**, edit a field and save. In **Work**, add a note or small text PDF.
+4. Return to the recruiter window or reload. Search for the candidate and inspect the new material.
+5. Edit the recap. In the recruiter panel, **Activity** should retain the original conversation.
+6. Remove a test connection. That recruiter should lose access through it. Another connection to the same recruiter may continue to grant access.
 
-## Demo beats
+## UI states
 
-| Moment                   | Show                                                   | Point to make                                                   |
-| ------------------------ | ------------------------------------------------------ | --------------------------------------------------------------- |
-| You remember the person  | Aisha's CRISPR conversation in the recruiter workspace | Context came from a specific conversation.                      |
-| No recruiter note-taking | Share QR, open on a phone, write the candidate recap   | The candidate captures what stood out.                          |
-| Substance follows        | Add a project note or a PDF                            | The relationship can deepen after the event.                    |
-| A new role opens         | Choose or add a role and inspect source passages       | A familiar person can be rediscovered through a different need. |
-| The human decides        | Open an excerpt, save a person, show the email link    | Evidence is organized; the recruiter still makes the judgment.  |
+Check desktop and 390px mobile widths: navigation, scrollable table, person panel, role selection, QR dialog, profile form, and portal. Check Escape and keyboard focus in dialogs and menus. Empty searches should offer a useful recovery action. Form failures should leave entered values intact.
 
-## Tell the truth about the demo
+**Integrations** must label Greenhouse, Ashby, Lever, Workday, Gmail, Outlook, Slack, and Google Calendar as **Planned**. No sync should be represented as active. CSV export is the working handoff. Email opens the user's mail client; do not send a message during testing.
 
-- The sample people and research are fictional.
-- Without a key, the role panel uses labeled keyword matching. Do not present it as live AI.
-- The OpenCode Go adapter is implemented and tested against controlled responses. Live provider verification remains until the key is added.
-- A QR submission is a reported encounter. Only the recruiter's acknowledgment says they remember it.
-- No fraud detection, candidate scoring, automatic outreach, or verified time-savings claim.
+## Model boundary
 
-## What to measure in a pilot
+Without a key, the UI displays **Text matches**, returned by Rust. With a compatible OpenCode Go key, the server can request a source summary. Live provider verification is pending. Controlled-response tests cover the adapter contract, caching, unsupported citations, malformed output, and fallback.
 
-Time required for a recruiter to share the invitation, candidate completion rate, time to identify a remembered person weeks later, and whether the recruiter can locate evidence for a new role without opening every document. Ask candidates whether the recap represents the conversation accurately. Do not use response rates alone as proof of trust.
+## Network setup
 
-## Before presenting
-
-Run `npm run check`, start the app, verify the laptop/phone network, and keep one recruiter browser and one candidate browser open. Prepare a small fictional PDF or text file. If the network blocks phone access, use the portal preview on the laptop. If the provider is unavailable, the labeled local mode still demonstrates the full workflow.
+Phone and laptop must share a reachable network. The QR uses the laptop's local address, or `PUBLIC_URL` when configured. A network with client isolation may require a hotspot. Local preview is not a deployed public site.

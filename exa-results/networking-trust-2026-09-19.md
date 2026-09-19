@@ -2,7 +2,7 @@
 
 Research checked September 19, 2026. Recommendation: test a lightweight way for a recruiter and candidate to continue a specific conversation over time, preserving its context, agreed next step, and subsequent evidence.
 
-Existing products validate the category. The opportunity is an improvement in the complete experience, not a claim that contact memory, shared records, or candidate rediscovery are new inventions. The recommended advantage remains a hypothesis until tested with users.
+Existing products validate the category. The opportunity is an improvement in the complete experience, not a claim that contact memory, shared records, or candidate rediscovery are new inventions. The proposed workflow remains a hypothesis until tested with users.
 
 ## Current market
 
@@ -42,7 +42,7 @@ An illustrative demo: a recruiter records that a candidate explained a live depl
 
 The product preserves the basis for an impression and helps refresh it. It cannot keep an old impression permanently valid. Meeting someone, observing a demo, claiming a skill, and independently verifying a skill are different facts and should remain distinguishable. Acknowledging a meeting is not a universal endorsement or identity check.
 
-## Product advantage to test
+## Workflow hypotheses to test
 
 | Improvement | User value | Evidence needed |
 |---|---|---|

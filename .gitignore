@@ -9,3 +9,6 @@ data/
 coverage/
 artifacts/
 *.log
+
+.tools/
+target/

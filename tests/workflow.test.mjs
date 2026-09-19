@@ -254,7 +254,7 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
     });
     assert.equal(
       software.data.brief.findings.find((v) => v.requirement === 'React and TypeScript').sourceId,
-      undefined,
+      null,
     );
     assert.equal(
       (
@@ -562,12 +562,12 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
       fetchImpl: () => assert.fail('Provider should not be called'),
     });
     assert.equal(result.mode, 'local');
-    const negative = localBrief(profile, connection, { requirements: ['CRISPR'] }, [
+    const negative = await localBrief(profile, connection, { requirements: ['CRISPR'] }, [
       { id: 'negative', text: 'I have not used CRISPR.', title: 'Note' },
     ]);
     assert.equal(negative.findings[0].quote, 'I have not used CRISPR.');
     assert.match(negative.findings[0].note, /Read the source/);
-    const hyphenated = localBrief(profile, connection, { requirements: ['CRISPR'] }, [
+    const hyphenated = await localBrief(profile, connection, { requirements: ['CRISPR'] }, [
       { id: 'work', text: 'I compared CRISPR-Cas9 delivery conditions in a supervised project.' },
     ]);
     assert.match(hyphenated.findings[0].quote, /CRISPR-Cas9/);
@@ -584,5 +584,137 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
     for (const source of selected)
       for (const line of source.text.split('\n'))
         assert.ok(many.find((s) => s.id === source.id).text.includes(line));
+  });
+});
+
+test('recruiter batch workflow, role ownership, CSV handoff and private state', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const recruiter = f.client(),
+    candidate = f.client(),
+    other = f.client(),
+    anonymous = f.client();
+  await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  await other('/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'Other Recruiter',
+      email: 'other@test.example',
+      password: 'other-test-password',
+      kind: 'recruiter',
+      company: 'Other lab',
+    },
+  });
+  const ids = ['connection-aisha-demo', 'connection-jun-demo'];
+  await t.test('bulk changes persist together and shortlist entries do not duplicate', async () => {
+    const changes = { stage: 'follow-up', saved: true, roleId: 'lab-technician', shortlist: true };
+    const result = await recruiter('/workspace/connections', {
+      method: 'PATCH',
+      body: { ids, changes },
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.data.connections.length, 2);
+    assert.ok(
+      result.data.connections.every(
+        (c) => c.stage === 'follow-up' && c.saved && c.shortlistedRoles.includes('lab-technician'),
+      ),
+    );
+    await recruiter('/workspace/connections', { method: 'PATCH', body: { ids, changes } });
+    const reread = await recruiter('/workspace');
+    assert.equal(reread.data.connections.find((c) => c.id === ids[0]).shortlistedRoles.length, 1);
+    assert.equal(
+      (await other('/workspace/connections', { method: 'PATCH', body: { ids, changes } })).status,
+      404,
+    );
+    const failed = await recruiter('/workspace/connections', {
+      method: 'PATCH',
+      body: { ids: [ids[0], 'missing-id'], changes: { stage: 'archived' } },
+    });
+    assert.equal(failed.status, 404);
+    assert.equal(
+      (await recruiter('/workspace')).data.connections.find((c) => c.id === ids[0]).stage,
+      'follow-up',
+    );
+  });
+  await t.test('role ownership and paired shortlist arguments are enforced', async () => {
+    const foreign = await other('/roles', {
+      method: 'POST',
+      body: {
+        title: 'Private role',
+        team: 'Other team',
+        description: 'A private role with a different recruiting team.',
+        requirements: ['PCR'],
+      },
+    });
+    assert.equal(
+      (
+        await recruiter('/workspace/connections', {
+          method: 'PATCH',
+          body: { ids, changes: { roleId: foreign.data.role.id, shortlist: true } },
+        })
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await recruiter('/workspace/connections', {
+          method: 'PATCH',
+          body: { ids, changes: { shortlist: true } },
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await recruiter(`/workspace/connections/${ids[0]}`, {
+          method: 'PATCH',
+          body: { stage: 'automatic-hire' },
+        })
+      ).status,
+      400,
+    );
+    const removed = await recruiter(`/workspace/connections/${ids[0]}`, {
+      method: 'PATCH',
+      body: { roleId: 'lab-technician', shortlist: false },
+    });
+    assert.deepEqual(removed.data.connection.shortlistedRoles, []);
+  });
+  await t.test(
+    'private recruiting status is not exposed on candidate or public routes',
+    async () => {
+      const privateFields = [
+        'saved',
+        'remembered',
+        'stage',
+        'shortlistedRoles',
+        'recruiterUpdatedAt',
+      ];
+      const candidateView = await candidate('/candidate');
+      const portal = await candidate('/portal/nyu-science-fair');
+      for (const connection of [...candidateView.data.connections, portal.data.existing]) {
+        for (const field of privateFields) assert.equal(connection[field], undefined);
+      }
+    },
+  );
+  await t.test('CSV is scoped, deduplicated and safe to open in a spreadsheet', async () => {
+    assert.equal(
+      (await anonymous('/workspace/export', { method: 'POST', body: { ids } })).status,
+      401,
+    );
+    assert.equal((await other('/workspace/export', { method: 'POST', body: { ids } })).status, 404);
+    const row = f.db.prepare('SELECT data FROM connections WHERE id=?').get(ids[0]);
+    const record = JSON.parse(row.data);
+    record.highlight = '=HYPERLINK("https://example.com")';
+    f.db.prepare('UPDATE connections SET data=? WHERE id=?').run(JSON.stringify(record), ids[0]);
+    const result = await recruiter('/workspace/export', {
+      method: 'POST',
+      body: { ids: [ids[0], ids[0]] },
+    });
+    assert.equal(result.status, 200);
+    assert.match(result.headers.get('content-type'), /text\/csv/);
+    assert.match(result.data, /"Name","Email"/);
+    assert.match(result.data, /"'=HYPERLINK\(""https:\/\/example.com""\)"/);
+    assert.equal(result.data.match(/Aisha Patel/g).length, 1);
   });
 });

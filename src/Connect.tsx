@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, CalendarDays, MapPin, Sprout } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CalendarDays } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { api, date, json } from './api';
 import { useAuth } from './session';
 import { AuthForm } from './Entry';
-import { Avatar, Brand, ErrorMessage, Loading, SubmitButton } from './ui';
+import { Avatar, Brand, ErrorMessage, Field, Loading, SubmitButton } from './ui';
 import type { Connection, Event, User } from './types';
-
 export default function Connect() {
   const { eventId } = useParams();
   const auth = useAuth();
@@ -59,114 +62,58 @@ export default function Connect() {
   if (auth.loading) return <Loading />;
   return (
     <div className="connect-page">
-      <header className="connect-header">
+      <header className="candidate-header">
         <Brand />
-        <span>
-          {auth.user?.kind === 'candidate' ? (
-            <Link to="/profile" className="text-link">
-              My profile
-              <ArrowUpRightIcon />
-            </Link>
-          ) : (
-            'A hello worth remembering.'
-          )}
-        </span>
+        {auth.user?.kind === 'candidate' && (
+          <Button variant="ghost" size="sm" render={<Link to="/profile" />} nativeButton={false}>
+            My profile
+            <ArrowRight />
+          </Button>
+        )}
       </header>
       <main className="connect-main">
         {!portal ? (
           <>
             <ErrorMessage message={error} />
-            {!error && <Loading text="Opening your invitation…" />}
+            {!error && <Loading />}
           </>
-        ) : step === 'done' ? (
-          <section className="connection-success">
-            <span className="success-mark">
-              <Check size={35} />
-            </span>
-            <span className="eyebrow">SAVED. THE CONVERSATION CAN CONTINUE.</span>
-            <h1>
-              Nice to meet you.
-              <br />
-              <em>Nice to remember you.</em>
-            </h1>
-            <p>
-              Your recap is now with {portal.recruiter.name.split(' ')[0]}. Add more of your work
-              whenever you're ready. It stays connected to this moment.
-            </p>
-            <div className="success-memory">
-              <Avatar name={portal.recruiter.name} />
-              <div>
-                <strong>
-                  {portal.recruiter.name} · {portal.recruiter.company}
-                </strong>
-                <span>{portal.event.name}</span>
-              </div>
-              <Check size={17} />
-            </div>
-            <blockquote>“{values.highlight}”</blockquote>
-            <Link to="/profile" className="button primary">
-              Add the work behind your story
-              <ArrowRight size={18} />
-            </Link>
-            <button className="text-button" onClick={() => setStep('recap')}>
-              Edit your recap
-            </button>
-            <p className="fine-print">
-              A connection, not a job application. The next step stays human.
-            </p>
-          </section>
         ) : (
           <>
-            <div className="invitation-head">
-              <span className="eyebrow">YOU MET. NOW KEEP THE CONTEXT.</span>
-              <h1>
-                A good conversation
-                <br />
-                shouldn't end there.
-              </h1>
-              <p>A few words now. Something to remember you by later.</p>
-            </div>
-            <section className="invitation-person">
+            <div className="portal-person">
               <Avatar name={portal.recruiter.name} size="large" />
-              <div>
-                <span>You're connecting with</span>
-                <h2>{portal.recruiter.name}</h2>
-                <p>
-                  {portal.recruiter.headline || 'Recruiter'} · {portal.recruiter.company}
-                </p>
-              </div>
-              <Sprout size={24} />
-            </section>
-            <div className="invitation-event">
+              <h1>{portal.recruiter.name}</h1>
+              <p>
+                {portal.recruiter.headline || 'Recruiter'} · {portal.recruiter.company}
+              </p>
               <span>
-                <CalendarDays size={14} />
-                {portal.event.name}
-              </span>
-              <span>
-                <MapPin size={14} />
-                {date(portal.event.date)} · {portal.event.location || 'In person'}
+                <CalendarDays className="size-3.5" />
+                {portal.event.name} · {date(portal.event.date)}
               </span>
             </div>
-            <div className="connect-paper">
-              <div className="connect-progress">
-                <span className={step === 'recap' ? 'active' : ''}>
-                  <b>01</b>The conversation
-                </span>
-                <span className={step === 'account' ? 'active' : ''}>
-                  <b>02</b>
-                  {auth.user?.kind === 'candidate' ? 'Already you' : 'A place to keep it'}
-                </span>
-              </div>
-              {auth.user?.kind === 'recruiter' ? (
-                <div className="portal-preview-note">
-                  <h3>This is your candidate portal.</h3>
-                  <p>
-                    Candidates see your invitation here, then share the detail they want you to
-                    remember.
-                  </p>
+            <section className="connect-form-card">
+              {step === 'done' ? (
+                <div className="connect-success">
+                  <span className="success-icon">
+                    <Check />
+                  </span>
+                  <h2>Connection saved</h2>
+                  <p>{values.highlight}</p>
+                  <Button render={<Link to="/profile" />} nativeButton={false}>
+                    Go to my profile
+                    <ArrowRight />
+                  </Button>
+                  <Button variant="ghost" onClick={() => setStep('recap')}>
+                    Edit recap
+                  </Button>
+                </div>
+              ) : auth.user?.kind === 'recruiter' ? (
+                <div className="form-stack">
+                  <Badge variant="secondary" className="w-fit">
+                    Candidate portal preview
+                  </Badge>
+                  <h2>Connect with {portal.recruiter.name.split(' ')[0]}</h2>
                   {auth.demoMode && (
-                    <button
-                      className="button primary"
+                    <Button
                       onClick={async () => {
                         try {
                           await auth.demo('candidate');
@@ -175,12 +122,12 @@ export default function Connect() {
                         }
                       }}
                     >
-                      Try as a demo candidate
-                      <ArrowRight size={17} />
-                    </button>
+                      Open as demo candidate
+                      <ArrowRight />
+                    </Button>
                   )}
-                  <button
-                    className="text-button"
+                  <Button
+                    variant="outline"
                     onClick={async () => {
                       try {
                         await auth.logout();
@@ -189,27 +136,34 @@ export default function Connect() {
                       }
                     }}
                   >
-                    Sign out to create a new candidate
-                  </button>
+                    Sign out
+                  </Button>
                 </div>
               ) : step === 'account' ? (
                 <>
-                  <button className="text-button" onClick={() => setStep('recap')}>
-                    <ArrowLeft size={15} />
-                    Back to your recap
-                  </button>
-                  <h2 className="account-title">Make this connection yours.</h2>
-                  <p className="muted">
-                    An account lets you add work later and keep this connection in one place.
-                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mb-4 -ml-2"
+                    onClick={() => setStep('recap')}
+                  >
+                    <ArrowLeft />
+                    Back
+                  </Button>
+                  <h2 className="mb-5">Save your connection</h2>
                   <AuthForm
                     candidateOnly
                     onDone={(user) => {
                       if (user.kind === 'candidate') void submit();
-                      else setError('Please use a candidate account for this connection.');
+                      else setError('Use a candidate account to connect.');
                     }}
                   />
-                  {busy && <Loading text="Saving your conversation…" />}
+                  {busy && <Loading text="Saving connection…" />}
+                  {auth.user?.kind === 'candidate' && error && (
+                    <Button className="mt-4" onClick={() => void submit()} disabled={busy}>
+                      Retry saving
+                    </Button>
+                  )}
                 </>
               ) : (
                 <form
@@ -220,85 +174,63 @@ export default function Connect() {
                     else setStep('account');
                   }}
                 >
-                  {portal.existing && (
-                    <div className="existing-connection">
-                      <Check size={16} />
-                      You're already connected. You can update your recap below.
-                    </div>
-                  )}
-                  <label>
-                    One detail to remember you by{' '}
-                    <span className="field-hint">Specific beats impressive.</span>
-                    <input
+                  <div className="flex items-center justify-between">
+                    <h2>{portal.existing ? 'Update your recap' : 'Your conversation'}</h2>
+                    {portal.existing && (
+                      <Badge variant="secondary">
+                        <Check className="size-3" />
+                        Connected
+                      </Badge>
+                    )}
+                  </div>
+                  <Field label="The detail to remember">
+                    <Input
                       value={values.highlight}
                       onChange={(e) => setValues((v) => ({ ...v, highlight: e.target.value }))}
-                      placeholder="The CRISPR project we talked about"
+                      placeholder="Our conversation about CRISPR delivery"
+                      required
                       minLength={4}
                       maxLength={180}
-                      required
                     />
-                  </label>
-                  <label>
-                    {portal.event.prompt}
-                    <textarea
+                  </Field>
+                  <Field label={portal.event.prompt}>
+                    <Textarea
                       value={values.conversation}
                       onChange={(e) => setValues((v) => ({ ...v, conversation: e.target.value }))}
-                      placeholder="We talked about my research on… You mentioned your team is working on…"
+                      placeholder="We discussed…"
+                      required
                       minLength={20}
                       maxLength={3000}
                       rows={5}
-                      required
                     />
-                    <span className="field-hint">
-                      Keep it personal. This is how {portal.recruiter.name.split(' ')[0]} will
-                      remember the conversation.
-                    </span>
-                  </label>
-                  <label>
-                    A role or area you're interested in <span className="optional">Optional</span>
-                    <input
+                  </Field>
+                  <Field label="Role / area of interest" hint="Optional">
+                    <Input
                       value={values.interest}
                       onChange={(e) => setValues((v) => ({ ...v, interest: e.target.value }))}
+                      placeholder="Lab technician · gene editing"
                       maxLength={300}
-                      placeholder="Research lab technician, gene editing…"
                     />
-                  </label>
-                  <div className="sharing-note">
-                    <Sprout size={19} />
-                    <p>
-                      {portal.recruiter.name.split(' ')[0]} will see this recap, your profile, and
-                      any work you add. You can update or remove the connection later.
-                    </p>
-                  </div>
+                  </Field>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Your profile, work, and future updates will be shared with{' '}
+                    {portal.recruiter.name.split(' ')[0]}. You can remove this connection from your
+                    profile.
+                  </p>
                   <SubmitButton busy={busy}>
                     {auth.user?.kind === 'candidate'
                       ? portal.existing
-                        ? 'Update our connection'
-                        : 'Keep our connection'
+                        ? 'Save changes'
+                        : 'Connect'
                       : 'Continue'}
                   </SubmitButton>
-                  {auth.user?.kind === 'candidate' && (
-                    <div className="signed-in-line">
-                      <Avatar name={auth.user.name} size="small" />
-                      Sharing as {auth.user.name}
-                    </div>
-                  )}
                 </form>
               )}
               <ErrorMessage message={error} />
-            </div>
-            <p className="connect-footnote">
-              Your words carry the connection. Again just keeps them close.
-            </p>
+            </section>
           </>
         )}
       </main>
-      <footer className="connect-footer">
-        again. <span>Good conversations go somewhere.</span>
-      </footer>
     </div>
   );
-}
-function ArrowUpRightIcon() {
-  return <ArrowRight size={14} />;
 }

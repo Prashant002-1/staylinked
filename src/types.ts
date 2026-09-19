@@ -49,6 +49,9 @@ export type Connection = {
   updatedAt: string;
   remembered?: boolean;
   saved?: boolean;
+  stage?: 'new' | 'reviewed' | 'follow-up' | 'contacted' | 'archived';
+  shortlistedRoles?: string[];
+  recruiterUpdatedAt?: string;
   candidate: User;
   event: Event;
   materials: Material[];
