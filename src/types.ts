@@ -26,6 +26,7 @@ export type Material = {
   type: 'note' | 'file';
   text: string;
   createdAt: string;
+  updatedAt?: string;
   extraction?: string;
   size?: number;
 };
@@ -47,15 +48,10 @@ export type Connection = {
   interest: string;
   createdAt: string;
   updatedAt: string;
-  remembered?: boolean;
-  saved?: boolean;
-  stage?: 'new' | 'reviewed' | 'follow-up' | 'contacted' | 'archived';
-  shortlistedRoles?: string[];
-  recruiterUpdatedAt?: string;
   candidate: User;
   event: Event;
   materials: Material[];
-  recruiter?: Pick<User, 'name' | 'company' | 'headline'>;
+  recruiter?: User;
 };
 export type Source = { id: string; title: string; text: string; kind: string };
 export type Brief = {
@@ -73,3 +69,19 @@ export type Brief = {
   model?: string;
 };
 export type Workspace = { connections: Connection[]; events: Event[]; roles: Role[] };
+
+export type Update = {
+  id: string;
+  authorId: string;
+  text: string;
+  createdAt: string;
+  updatedAt?: string;
+  author: User;
+};
+export type Message = {
+  id: string;
+  connectionId: string;
+  senderId: string;
+  text: string;
+  createdAt: string;
+};

@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ArrowRight, BriefcaseBusiness, UserRound, Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 import { useAuth } from './session';
 import { api, json } from './api';
-import { Brand, ErrorMessage, Loading, SubmitButton, Field, Choice } from './ui';
+import { Avatar, Brand, ErrorMessage, Loading, SubmitButton, Field, Choice } from './ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import type { User } from './types';
 export function AuthForm({
   onDone,
@@ -71,7 +70,7 @@ export function AuthForm({
                     value={kind}
                     onChange={(v) => setKind(v as User['kind'])}
                     options={[
-                      { value: 'candidate', label: 'Candidate' },
+                      { value: 'candidate', label: 'Applicant' },
                       { value: 'recruiter', label: 'Recruiter' },
                     ]}
                     className="w-full"
@@ -134,10 +133,7 @@ export default function Entry() {
       </header>
       <section className="auth-card">
         <div className="mb-7">
-          <h1 className="text-2xl font-semibold tracking-tight">again-hr</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            In-person recruiting workflow prototype.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">Continue to Staylinked</h1>
         </div>
         {auth.demoMode && mode === 'demo' ? (
           <>
@@ -150,16 +146,20 @@ export default function Entry() {
                   onClick={() => enter(kind)}
                   className="auth-option"
                 >
-                  <span className="auth-option-icon">
-                    {kind === 'recruiter' ? <BriefcaseBusiness /> : <UserRound />}
+                  <Avatar name={kind === 'recruiter' ? 'Maya Chen' : 'Aisha Patel'} />
+                  <span className="flex-1 text-left">
+                    <strong className="block text-sm font-medium">
+                      {kind === 'recruiter' ? 'Maya Chen' : 'Aisha Patel'}
+                    </strong>
+                    <span className="text-xs text-muted-foreground">
+                      {kind === 'recruiter' ? 'Recruiter demo' : 'Applicant demo'}
+                    </span>
                   </span>
-                  <span className="flex-1 text-left capitalize">{kind} workspace</span>
                   {busy === kind ? <Loader2 className="animate-spin" /> : <ArrowRight />}
                 </Button>
               ))}
             </div>
-            <div className="flex items-center justify-between mt-6">
-              <Badge variant="secondary">Demo data</Badge>
+            <div className="flex justify-center mt-6">
               <Button variant="link" size="sm" onClick={() => setMode('account')}>
                 Use your account <ArrowRight />
               </Button>

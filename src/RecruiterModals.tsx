@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Copy, ExternalLink } from 'lucide-react';
 import { api, json } from './api';
 import { useAuth } from './session';
-import { Choice, CompanyAvatar, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
+import { Avatar, Choice, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,7 +40,7 @@ export function ShareQR({
     };
   }, [eventId]);
   return (
-    <Modal title="Share event QR" onClose={onClose}>
+    <Modal title="Connect in person" onClose={onClose}>
       <Choice
         label="Event"
         value={eventId}
@@ -51,9 +51,9 @@ export function ShareQR({
       {qr ? (
         <>
           <div className="qr-display">
-            <div className="qr-company">
-              <CompanyAvatar name={user?.company} small />
-              <span>{user?.company || 'My workspace'}</span>
+            <div className="qr-person">
+              <Avatar name={user?.name || ''} />
+              <span>{user?.name}</span>
             </div>
             <img
               src={qr.image}
@@ -146,10 +146,10 @@ export function NewRole({
         }}
       >
         <Field label="Title">
-          <Input name="title" required maxLength={180} placeholder="Research Lab Technician" />
+          <Input name="title" required maxLength={180} placeholder="Product Engineer" />
         </Field>
         <Field label="Team / location">
-          <Input name="team" maxLength={180} placeholder="Gene editing · New York" />
+          <Input name="team" maxLength={180} placeholder="Product · New York" />
         </Field>
         <Field label="Job description">
           <Textarea name="description" required minLength={20} maxLength={10000} rows={4} />
@@ -159,7 +159,7 @@ export function NewRole({
             name="requirements"
             required
             rows={4}
-            placeholder={'CRISPR\nMammalian cell culture\nDNA extraction and PCR'}
+            placeholder={'React and TypeScript\nPostgreSQL\nAutomated tests'}
           />
         </Field>
         <ErrorMessage message={error} />

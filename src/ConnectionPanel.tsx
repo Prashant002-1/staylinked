@@ -1,22 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Bookmark,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Mail,
-  MapPin,
-  Plus,
-  X,
+  ArrowLeft,
   ArrowUpRight,
+  BriefcaseBusiness,
+  ChevronDown,
+  FileText,
+  MapPin,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Send,
+  Unlink,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Textarea } from '@/components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -24,395 +23,434 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { api, date, json } from './api';
-import { Avatar, Choice, Empty, ErrorMessage, ExternalLink, Loading, Modal, stages } from './ui';
-import type { Brief, Connection, Material, Role, Source } from './types';
-export type WorkflowChange = {
-  saved?: boolean;
-  stage?: Connection['stage'];
-  roleId?: string;
-  shortlist?: boolean;
-};
-export function MaterialPreview({
-  material,
-  onClose,
-}: {
-  material: Material;
-  onClose: () => void;
-}) {
-  return (
-    <Modal title={material.title} onClose={onClose} wide>
-      <div className="source-text">
-        {material.text || 'No searchable text. Download the original file to view it.'}
-      </div>
-      {material.type === 'file' && (
-        <Button
-          variant="outline"
-          render={<a href={`/api/materials/${material.id}/download`} />}
-          nativeButton={false}
-        >
-          <FileText />
-          Download original
-        </Button>
-      )}
-    </Modal>
-  );
-}
+import { Avatar, Choice, Empty, ErrorMessage, ExternalLink, Loading, Modal } from './ui';
+import { MaterialPreview } from './Profile';
+import type { Brief, Connection, Material, Message, Role, Source, User } from './types';
+
 export default function ConnectionPanel({
   connection: c,
+  connections,
+  user,
   roles,
-  initialRole,
   onClose,
   onChange,
-  busy,
-  position,
-  total,
-  onPrevious,
-  onNext,
+  onNewRole,
+}: {
+  connection: Connection;
+  connections: Connection[];
+  user: User;
+  roles: Role[];
+  onClose: () => void;
+  onChange: () => void;
+  onNewRole: () => void;
+}) {
+  const recruiter = user.kind === 'recruiter';
+  const person = recruiter ? c.candidate : c.recruiter!;
+  const encounters = connections
+    .filter((other) => other.candidateId === c.candidateId && other.recruiterId === c.recruiterId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const [thread, setThread] = useState(c.id);
+  const current = encounters.find((e) => e.id === thread) || c;
+  const [messages, setMessages] = useState<Message[] | null>(null);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [material, setMaterial] = useState<Material | null>(null);
+  const [remove, setRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [roleOpen, setRoleOpen] = useState(false);
+  const end = useRef<HTMLDivElement>(null);
+  const requestVersion = useRef(0);
+  const activeThread = useRef<string | null>(thread);
+  const sendingRequest = useRef(false);
+  const loadMessages = useCallback(async () => {
+    if (activeThread.current !== thread || sendingRequest.current) return;
+    const version = ++requestVersion.current;
+    try {
+      const data = await api<{ messages: Message[] }>(`/connections/${thread}/messages`);
+      if (activeThread.current !== thread || version !== requestVersion.current) return;
+      setMessages(data.messages);
+      setError('');
+    } catch (e) {
+      if (activeThread.current === thread && version === requestVersion.current)
+        setError((e as Error).message);
+    }
+  }, [thread]);
+  useEffect(() => {
+    activeThread.current = thread;
+    sendingRequest.current = false;
+    setSending(false);
+    setMessages(null);
+    setError('');
+    setText('');
+    void loadMessages();
+    const interval = setInterval(() => {
+      if (!document.hidden) void loadMessages();
+    }, 15000);
+    return () => {
+      activeThread.current = null;
+      requestVersion.current++;
+      clearInterval(interval);
+    };
+  }, [thread, loadMessages]);
+  return (
+    <>
+      <div className="connection-topline">
+        <Button variant="ghost" onClick={onClose}>
+          <ArrowLeft />
+          Back to people
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" size="icon" aria-label="Connection options" />}
+          >
+            <MoreHorizontal />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setRemove(true)}>
+              <Unlink />
+              Disconnect
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <div className="relationship-layout">
+        <aside className="person-about">
+          <Avatar name={person.name} size="large" />
+          <h1>{person.name}</h1>
+          <p className="profile-headline">{person.headline}</p>
+          {person.location && (
+            <p className="profile-location">
+              <MapPin size={13} />
+              {person.location}
+            </p>
+          )}
+          {person.bio && <p className="profile-bio">{person.bio}</p>}
+          {!!person.links.length && (
+            <div className="profile-links">
+              {person.links.map((l) => (
+                <ExternalLink url={l.url} key={l.url}>
+                  {l.label || new URL(l.url).hostname}
+                </ExternalLink>
+              ))}
+            </div>
+          )}
+          {recruiter && (
+            <section className="shared-work">
+              <h2>What I’ve been making</h2>
+              {c.materials.length ? (
+                c.materials.map((m) => (
+                  <button className="work-link" key={m.id} onClick={() => setMaterial(m)}>
+                    <FileText size={17} />
+                    <span>
+                      {m.title}
+                      <small>{date(m.updatedAt || m.createdAt)}</small>
+                    </span>
+                    <ArrowUpRight size={15} />
+                  </button>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No work shared yet.</p>
+              )}
+            </section>
+          )}
+          {recruiter && (
+            <section className="role-context">
+              <button
+                className="role-toggle"
+                aria-expanded={roleOpen}
+                onClick={() => setRoleOpen(!roleOpen)}
+              >
+                <BriefcaseBusiness size={16} />A role in mind?
+                <ChevronDown size={15} className={roleOpen ? 'rotate-180' : ''} />
+              </button>
+              {roleOpen && (
+                <RoleContext
+                  key={current.id}
+                  connection={current}
+                  roles={roles}
+                  onNewRole={onNewRole}
+                />
+              )}
+            </section>
+          )}
+        </aside>
+        <section
+          className="relationship-conversation"
+          aria-label={`Conversation with ${person.name}`}
+        >
+          {encounters.length > 1 && (
+            <fieldset disabled={sending} className="mb-5 min-w-0">
+              <Choice
+                label="Conversation from event"
+                value={thread}
+                options={encounters.map((e) => ({ value: e.id, label: e.event.name }))}
+                onChange={(value) => {
+                  if (!sendingRequest.current) setThread(value);
+                }}
+                className="w-full"
+              />
+            </fieldset>
+          )}
+          <div className="meeting-memory">
+            <div className="meeting-meta">
+              <span>WHERE WE MET</span>
+              <time dateTime={current.createdAt}>{date(current.createdAt)}</time>
+            </div>
+            <h2>{current.event.name}</h2>
+            <h3>{current.highlight}</h3>
+            <p>{current.conversation}</p>
+            {current.originalConversation !== current.conversation && (
+              <details className="original-note">
+                <summary>Our first note</summary>
+                <p>{current.originalConversation}</p>
+              </details>
+            )}
+            <div className="memory-footer">
+              <span>
+                {recruiter ? person.name.split(' ')[0] : 'You'} shared this
+                {current.updatedAt !== current.createdAt
+                  ? ` · edited ${date(current.updatedAt)}`
+                  : ''}
+              </span>
+              {!recruiter && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  render={<Link to={`/connect/${current.eventId}`} />}
+                  nativeButton={false}
+                >
+                  <Pencil />
+                  Edit
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="conversation-heading">
+            <h2>Conversation</h2>
+            <span>Just the two of you</span>
+          </div>
+          <div className="message-list" aria-live="polite" aria-relevant="additions">
+            {!messages && !error && <Loading text="Opening conversation…" />}
+            {messages?.length === 100 && (
+              <p className="mb-4 text-center text-xs text-muted-foreground">
+                Showing the latest 100 messages
+              </p>
+            )}
+            {messages?.length === 0 && <Empty title="Pick up where you left off" />}
+            {messages?.map((message) => {
+              const own = message.senderId === user.id;
+              return (
+                <div className={`message ${own ? 'own' : ''}`} key={message.id}>
+                  {!own && <Avatar name={person.name} size="small" />}
+                  <div>
+                    <div className="message-bubble">{message.text}</div>
+                    <time dateTime={message.createdAt}>
+                      {date(message.createdAt)} ·{' '}
+                      {new Date(message.createdAt).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </time>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={end} />
+          </div>
+          <ErrorMessage message={error} />
+          <form
+            className="message-composer"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (sendingRequest.current || !text.trim()) return;
+              const destination = thread;
+              let sent = false;
+              sendingRequest.current = true;
+              requestVersion.current++;
+              setSending(true);
+              setError('');
+              try {
+                const { message } = await api<{ message: Message }>(
+                  `/connections/${destination}/messages`,
+                  { method: 'POST', body: json({ text }) },
+                );
+                if (activeThread.current !== destination) return;
+                requestVersion.current++;
+                setMessages((old) =>
+                  [...(old || []).filter((m) => m.id !== message.id), message].slice(-100),
+                );
+                setText('');
+                requestAnimationFrame(() =>
+                  end.current?.scrollIntoView({
+                    block: 'nearest',
+                    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                      ? 'auto'
+                      : 'smooth',
+                  }),
+                );
+              } catch (e) {
+                if (activeThread.current === destination) setError((e as Error).message);
+              } finally {
+                if (activeThread.current === destination) {
+                  sendingRequest.current = false;
+                  setSending(false);
+                  if (sent) void loadMessages();
+                }
+              }
+            }}
+          >
+            <Textarea
+              disabled={sending}
+              aria-label={`Message ${person.name}`}
+              placeholder={`Message ${person.name.split(' ')[0]}…`}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              maxLength={3000}
+              rows={3}
+              required
+            />
+            <div>
+              <Button type="submit" disabled={sending || !text.trim()}>
+                {sending ? 'Sending…' : 'Send'}
+                <Send size={14} />
+              </Button>
+            </div>
+          </form>
+        </section>
+      </div>
+      {material && <MaterialPreview material={material} onClose={() => setMaterial(null)} />}
+      {remove && (
+        <Modal
+          title={`Disconnect from ${person.name.split(' ')[0]}?`}
+          onClose={() => setRemove(false)}
+        >
+          <p className="text-sm text-muted-foreground">
+            Your conversations together will be removed, and you’ll no longer see each other’s
+            updates or shared work.
+          </p>
+          <div className="form-actions">
+            <Button variant="outline" onClick={() => setRemove(false)}>
+              Stay connected
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={removing}
+              onClick={async () => {
+                setRemoving(true);
+                try {
+                  for (const encounter of encounters)
+                    await api(`/connections/${encounter.id}`, { method: 'DELETE' });
+                  onChange();
+                  onClose();
+                  toast.success('Disconnected');
+                } catch (e) {
+                  toast.error((e as Error).message);
+                  onChange();
+                } finally {
+                  setRemoving(false);
+                }
+              }}
+            >
+              Disconnect
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+function RoleContext({
+  connection,
+  roles,
+  onNewRole,
 }: {
   connection: Connection;
   roles: Role[];
-  initialRole: string;
-  onClose: () => void;
-  onChange: (changes: WorkflowChange) => void;
-  busy: boolean;
-  position: number;
-  total: number;
-  onPrevious: () => void;
-  onNext: () => void;
+  onNewRole: () => void;
 }) {
-  const [tab, setTab] = useState('overview');
-  const [roleId, setRoleId] = useState(initialRole || roles[0]?.id || '');
-  const [evidence, setEvidence] = useState<{ brief: Brief; sources: Source[] } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [material, setMaterial] = useState<Material | null>(null);
+  const [roleId, setRoleId] = useState(roles[0]?.id || '');
+  const [result, setResult] = useState<{ brief: Brief; sources: Source[] } | null>(null);
   const [source, setSource] = useState<Source | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
-    setEvidence(null);
+    setResult(null);
     setError('');
     if (!roleId) return;
-    setLoading(true);
-    api<NonNullable<typeof evidence>>(`/workspace/connections/${c.id}/brief`, {
+    setBusy(true);
+    api<NonNullable<typeof result>>(`/workspace/connections/${connection.id}/brief`, {
       method: 'POST',
       body: json({ roleId }),
     })
       .then((data) => {
-        if (active) setEvidence(data);
+        if (active) setResult(data);
       })
       .catch((e) => {
         if (active) setError(e.message);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setBusy(false);
       });
     return () => {
       active = false;
     };
-  }, [c.id, c.updatedAt, c.candidate.updatedAt, c.materials, roleId]);
-  const shortlist = c.shortlistedRoles || [];
+  }, [
+    roleId,
+    connection.id,
+    connection.updatedAt,
+    connection.candidate.updatedAt,
+    connection.materials,
+  ]);
   return (
-    <Sheet
-      open
-      onOpenChange={(v) => {
-        if (!v) onClose();
-      }}
-    >
-      <SheetContent
-        showCloseButton={false}
-        aria-describedby={undefined}
-        className="connection-panel data-[side=right]:w-full data-[side=right]:sm:max-w-[570px] gap-0"
-      >
-        <div className="panel-toolbar">
-          <span>Connection</span>
-          <div className="flex items-center gap-1">
-            <span className="text-xs tabular-nums mr-2">
-              {position + 1} of {total}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Previous connection"
-              disabled={position === 0}
-              onClick={onPrevious}
-            >
-              <ChevronLeft />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Next connection"
-              disabled={position === total - 1}
-              onClick={onNext}
-            >
-              <ChevronRight />
-            </Button>
-            <span className="h-4 w-px bg-border mx-1" />
-            <Button variant="ghost" size="icon-sm" aria-label="Close connection" onClick={onClose}>
-              <X />
-            </Button>
-          </div>
-        </div>
-        <div className="panel-scroll">
-          <div className="person-heading">
-            <Avatar name={c.candidate.name} size="large" />
-            <div className="min-w-0 flex-1">
-              <SheetTitle className="text-xl font-semibold tracking-tight">
-                {c.candidate.name}
-              </SheetTitle>
-              <p>{c.candidate.headline}</p>
-              {c.candidate.location && (
-                <span>
-                  <MapPin className="size-3" />
-                  {c.candidate.location}
-                </span>
-              )}
-            </div>
-            <Button
-              variant={c.saved ? 'secondary' : 'ghost'}
-              size="icon"
-              disabled={busy}
-              aria-label={c.saved ? 'Unsave connection' : 'Save connection'}
-              onClick={() => onChange({ saved: !c.saved })}
-            >
-              <Bookmark className={c.saved ? 'fill-current' : ''} />
-            </Button>
-          </div>
-          <div className="person-actions">
-            <Button
-              render={
-                <a
-                  href={`mailto:${c.candidate.email}?subject=${encodeURIComponent(`Following up from ${c.event.name}`)}`}
-                />
-              }
-              nativeButton={false}
-            >
-              <Mail />
-              Email
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" disabled={busy} />}>
-                {shortlist.length ? <Check /> : <Plus />}Shortlist
-                {shortlist.length > 0 && <span className="count-pill">{shortlist.length}</span>}
-                <ChevronDown />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="min-w-64">
-                {roles.length ? (
-                  roles.map((r) => (
-                    <DropdownMenuItem
-                      key={r.id}
-                      onClick={() =>
-                        onChange({ roleId: r.id, shortlist: !shortlist.includes(r.id) })
-                      }
-                    >
-                      <span className="flex-1">{r.title}</span>
-                      {shortlist.includes(r.id) && <Check />}
-                    </DropdownMenuItem>
-                  ))
-                ) : (
-                  <DropdownMenuItem disabled>Add a role first</DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="ml-auto">
-              <Choice
-                label="Connection status"
-                value={c.stage || (c.remembered ? 'reviewed' : 'new')}
-                options={stages}
-                onChange={(v) => onChange({ stage: v as Connection['stage'] })}
-                className="h-8 min-w-30"
-              />
-            </div>
-          </div>
-          <Tabs value={tab} onValueChange={(v) => setTab(String(v))} className="person-tabs">
-            <TabsList variant="line" className="w-full justify-start border-b px-6 h-11 gap-5">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="work">
-                Work<span className="count-pill">{c.materials.length}</span>
-              </TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-            </TabsList>
-            <TabsContent value="overview" className="panel-section space-y-7">
-              <section className="encounter">
-                <div className="encounter-meta">
-                  <CalendarDays className="size-3.5" />
-                  <span>{c.event.name}</span>
-                  <span className="ml-auto shrink-0">{date(c.createdAt)}</span>
-                </div>
-                <h3>{c.highlight}</h3>
-                <p>{c.conversation}</p>
-                <span className="source-byline">Shared by {c.candidate.name.split(' ')[0]}</span>
-              </section>
-              {c.interest && (
-                <div className="property-row">
-                  <span>Interested in</span>
-                  <p>{c.interest}</p>
-                </div>
-              )}
-              <section>
-                <div className="section-heading">
-                  <h3>Role evidence</h3>
-                  {evidence && (
-                    <Badge variant="secondary" className="font-normal text-[11px]">
-                      {evidence.brief.mode === 'ai' ? 'Source summary' : 'Text matches'}
-                    </Badge>
-                  )}
-                </div>
-                {roles.length ? (
+    <div className="role-body">
+      {roles.length > 0 && (
+        <Choice
+          label="Choose a role"
+          value={roleId}
+          onChange={setRoleId}
+          options={roles.map((r) => ({ value: r.id, label: r.title }))}
+          className="w-full"
+        />
+      )}
+      <Button variant="ghost" size="sm" onClick={onNewRole}>
+        <Plus />
+        Add a role
+      </Button>
+      {busy && <Loading text="Finding relevant work…" />}
+      <ErrorMessage message={error} />
+      {result && (
+        <div className="role-passages">
+          {result.brief.mode === 'ai' && result.brief.summary && <p>{result.brief.summary}</p>}
+          {result.brief.findings.map((finding, i) => {
+            const s = result.sources.find((s) => s.id === finding.sourceId);
+            return (
+              <div key={i}>
+                <h3>{finding.requirement}</h3>
+                {finding.quote && s ? (
                   <>
-                    <Choice
-                      label="Evidence for role"
-                      value={roleId}
-                      onChange={setRoleId}
-                      options={roles.map((r) => ({ value: r.id, label: r.title }))}
-                      className="w-full mt-3"
-                    />
-                    {loading && <Loading text="Loading evidence…" />}
-                    <ErrorMessage message={error} />
-                    {evidence && (
-                      <div className="evidence-list">
-                        {evidence.brief.mode === 'ai' && evidence.brief.summary && (
-                          <p className="text-sm mb-3 leading-relaxed">{evidence.brief.summary}</p>
-                        )}
-                        {evidence.brief.findings.map((f, i) => {
-                          const s = evidence.sources.find((s) => s.id === f.sourceId);
-                          return (
-                            <div className="evidence-item" key={`${f.requirement}-${i}`}>
-                              <div className="flex items-center gap-2">
-                                <span className={`evidence-dot ${f.quote && s ? 'found' : ''}`} />
-                                <h4>{f.requirement}</h4>
-                              </div>
-                              {f.quote && s ? (
-                                <>
-                                  <blockquote>{f.quote}</blockquote>
-                                  <Button
-                                    variant="link"
-                                    size="xs"
-                                    className="h-auto p-0 text-xs"
-                                    onClick={() => setSource(s)}
-                                  >
-                                    <FileText className="size-3" />
-                                    {s.title}
-                                    <ArrowUpRight className="size-3" />
-                                  </Button>
-                                </>
-                              ) : (
-                                <p className="text-xs text-muted-foreground ml-4 mt-1">
-                                  No supporting text found
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })}
-                        {evidence.brief.fallback && (
-                          <p className="text-xs text-muted-foreground pt-3">
-                            {evidence.brief.notice ||
-                              'Showing text matches. AI summary unavailable.'}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    <blockquote>{finding.quote}</blockquote>
+                    <button onClick={() => setSource(s)}>
+                      {s.title}
+                      <ArrowUpRight size={12} />
+                    </button>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Add a role to review relevant work.
-                  </p>
+                  <p>Couldn’t find a matching passage.</p>
                 )}
-              </section>
-              {c.candidate.links.length > 0 && (
-                <section>
-                  <div className="section-heading">
-                    <h3>Links</h3>
-                  </div>
-                  <div className="flex flex-wrap gap-4 mt-3">
-                    {c.candidate.links.map((l) => (
-                      <ExternalLink key={l.url} url={l.url}>
-                        {l.label}
-                      </ExternalLink>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </TabsContent>
-            <TabsContent value="work" className="panel-section">
-              <h3 className="section-label mb-3">About</h3>
-              <p className="text-sm leading-relaxed whitespace-pre-line text-secondary-foreground">
-                {c.candidate.bio || 'No bio added.'}
-              </p>
-              <div className="flex flex-wrap gap-1.5 my-4">
-                {c.candidate.tags?.map((t) => (
-                  <Badge key={t} variant="secondary" className="font-normal">
-                    {t}
-                  </Badge>
-                ))}
               </div>
-              <div className="section-heading mt-7">
-                <h3>Shared work</h3>
-                <span className="text-xs text-muted-foreground">
-                  {c.materials.length} files & notes
-                </span>
-              </div>
-              <div className="material-list">
-                {c.materials.map((m) => (
-                  <Button
-                    variant="ghost"
-                    className="material-row"
-                    key={m.id}
-                    onClick={() => setMaterial(m)}
-                  >
-                    <span className="file-icon">
-                      <FileText />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <strong>{m.title}</strong>
-                      <small>
-                        {m.type === 'file' ? 'Document' : 'Project note'} · {date(m.createdAt)}
-                      </small>
-                    </span>
-                    <ArrowUpRight className="text-muted-foreground" />
-                  </Button>
-                ))}
-              </div>
-              {!c.materials.length && <Empty title="No work shared yet" />}
-            </TabsContent>
-            <TabsContent value="activity" className="panel-section">
-              <div className="activity-list">
-                <div>
-                  <span className="activity-dot" />
-                  <h4>Met at {c.event.name}</h4>
-                  <small>
-                    {date(c.createdAt)} · {c.event.location}
-                  </small>
-                  <p>{c.originalConversation}</p>
-                </div>
-                {c.updatedAt !== c.createdAt && (
-                  <div>
-                    <span className="activity-dot" />
-                    <h4>Conversation updated</h4>
-                    <small>
-                      {date(c.updatedAt)} · {c.candidate.name}
-                    </small>
-                    <p>{c.conversation}</p>
-                  </div>
-                )}
-                {c.materials.map((m) => (
-                  <div key={m.id}>
-                    <span className="activity-dot" />
-                    <h4>Shared {m.title}</h4>
-                    <small>{date(m.createdAt)}</small>
-                  </div>
-                ))}
-              </div>
-            </TabsContent>
-          </Tabs>
+            );
+          })}
+          <p className="matching-note">From their own words. Matches aren’t a skills assessment.</p>
+          {result.brief.fallback && <p className="matching-note">{result.brief.notice}</p>}
         </div>
-        {material && <MaterialPreview material={material} onClose={() => setMaterial(null)} />}
-        {source && (
-          <Modal title={source.title} onClose={() => setSource(null)} wide>
-            <div className="source-text">{source.text}</div>
-          </Modal>
-        )}
-      </SheetContent>
-    </Sheet>
+      )}
+      {source && (
+        <Modal title={source.title} onClose={() => setSource(null)} wide>
+          <div className="source-text">{source.text}</div>
+        </Modal>
+      )}
+    </div>
   );
 }

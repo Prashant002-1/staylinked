@@ -1,4 +1,4 @@
-name: Check prototype
+name: Check Staylinked
 on:
   push:
   pull_request:

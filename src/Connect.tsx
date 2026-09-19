@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, CalendarDays } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { api, date, json } from './api';
 import { useAuth } from './session';
 import { AuthForm } from './Entry';
-import { Avatar, Brand, CompanyAvatar, ErrorMessage, Field, Loading, SubmitButton } from './ui';
+import { Avatar, Brand, ErrorMessage, Field, Loading, SubmitButton } from './ui';
 import type { Connection, Event, User } from './types';
+
 export default function Connect() {
   const { eventId } = useParams();
   const auth = useAuth();
   const [portal, setPortal] = useState<{
     event: Event;
-    recruiter: Pick<User, 'name' | 'company' | 'headline'>;
+    recruiter: Pick<User, 'name' | 'headline'>;
     existing: Connection | null;
   } | null>(null);
   const [error, setError] = useState('');
@@ -24,24 +24,24 @@ export default function Connect() {
   const [values, setValues] = useState({ highlight: '', conversation: '', interest: '' });
   useEffect(() => {
     let active = true;
-    api<typeof portal>(`/portal/${eventId}`)
+    api<NonNullable<typeof portal>>(`/portal/${eventId}`)
       .then((data) => {
-        if (active) {
-          setPortal(data);
-          if (data?.existing)
-            setValues((v) =>
-              v.conversation
-                ? v
-                : {
-                    highlight: data.existing!.highlight,
-                    conversation: data.existing!.conversation,
-                    interest: data.existing!.interest,
-                  },
-            );
-        }
+        if (!active) return;
+        setPortal(data);
+        setError('');
+        if (data.existing)
+          setValues((current) =>
+            current.conversation
+              ? current
+              : {
+                  highlight: data.existing!.highlight,
+                  conversation: data.existing!.conversation,
+                  interest: data.existing!.interest,
+                },
+          );
       })
-      .catch((e) => {
-        if (active) setError(e.message);
+      .catch((error) => {
+        if (active) setError(error.message);
       });
     return () => {
       active = false;
@@ -53,21 +53,22 @@ export default function Connect() {
     try {
       await api(`/portal/${eventId}/connect`, { method: 'POST', body: json(values) });
       setStep('done');
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (error) {
+      setError((error as Error).message);
     } finally {
       setBusy(false);
     }
   };
   if (auth.loading) return <Loading />;
+  const home = auth.user?.kind === 'recruiter' ? '/workspace' : '/profile';
+  const firstName = portal?.recruiter.name.split(' ')[0];
   return (
     <div className="connect-page">
-      <header className="candidate-header">
+      <header className="social-header connect-header">
         <Brand />
-        {auth.user?.kind === 'candidate' && (
-          <Button variant="ghost" size="sm" render={<Link to="/profile" />} nativeButton={false}>
-            My profile
-            <ArrowRight />
+        {auth.user && (
+          <Button variant="ghost" size="sm" render={<Link to={home} />} nativeButton={false}>
+            Your people <ArrowRight />
           </Button>
         )}
       </header>
@@ -82,50 +83,44 @@ export default function Connect() {
             <div className="portal-person">
               <Avatar name={portal.recruiter.name} size="large" />
               <h1>{portal.recruiter.name}</h1>
-              <p>{portal.recruiter.headline || 'Recruiter'}</p>
-              <div className="portal-company">
-                <CompanyAvatar name={portal.recruiter.company} small />
-                <span>{portal.recruiter.company || 'Independent'}</span>
-              </div>
+              {portal.recruiter.headline && <p>{portal.recruiter.headline}</p>}
               <span>
-                <CalendarDays className="size-3.5" />
                 {portal.event.name} · {date(portal.event.date)}
               </span>
             </div>
             <section className="connect-form-card">
               {step === 'done' ? (
                 <div className="connect-success">
-                  <span className="success-icon">
-                    <Check />
-                  </span>
-                  <h2>Connection saved</h2>
+                  <h2>Good to meet you, {firstName}.</h2>
                   <p>{values.highlight}</p>
                   <Button render={<Link to="/profile" />} nativeButton={false}>
-                    Go to my profile
-                    <ArrowRight />
+                    Your people <ArrowRight />
                   </Button>
                   <Button variant="ghost" onClick={() => setStep('recap')}>
-                    Edit recap
+                    Edit your note
                   </Button>
                 </div>
               ) : auth.user?.kind === 'recruiter' ? (
                 <div className="form-stack">
-                  <Badge variant="secondary" className="w-fit">
-                    Candidate portal preview
-                  </Badge>
-                  <h2>Connect with {portal.recruiter.name.split(' ')[0]}</h2>
+                  <h2>
+                    {auth.user.name === portal.recruiter.name
+                      ? 'Your invitation'
+                      : `Connect with ${firstName}`}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Open this link with an applicant account.
+                  </p>
                   {auth.demoMode && (
                     <Button
                       onClick={async () => {
                         try {
                           await auth.demo('candidate');
-                        } catch (e) {
-                          setError((e as Error).message);
+                        } catch (error) {
+                          setError((error as Error).message);
                         }
                       }}
                     >
-                      Open as demo candidate
-                      <ArrowRight />
+                      Try as an applicant <ArrowRight />
                     </Button>
                   )}
                   <Button
@@ -133,12 +128,12 @@ export default function Connect() {
                     onClick={async () => {
                       try {
                         await auth.logout();
-                      } catch (e) {
-                        setError((e as Error).message);
+                      } catch (error) {
+                        setError((error as Error).message);
                       }
                     }}
                   >
-                    Sign out
+                    Switch account
                   </Button>
                 </div>
               ) : step === 'account' ? (
@@ -152,44 +147,38 @@ export default function Connect() {
                     <ArrowLeft />
                     Back
                   </Button>
-                  <h2 className="mb-5">Save your connection</h2>
+                  <h2 className="mb-5">Stay in touch with {firstName}</h2>
                   <AuthForm
                     candidateOnly
                     onDone={(user) => {
                       if (user.kind === 'candidate') void submit();
-                      else setError('Use a candidate account to connect.');
+                      else setError('Use an applicant account to connect.');
                     }}
                   />
-                  {busy && <Loading text="Saving connection…" />}
+                  {busy && <Loading text="Connecting…" />}
                   {auth.user?.kind === 'candidate' && error && (
                     <Button className="mt-4" onClick={() => void submit()} disabled={busy}>
-                      Retry saving
+                      Try again
                     </Button>
                   )}
                 </>
               ) : (
                 <form
                   className="form-stack"
-                  onSubmit={(e) => {
-                    e.preventDefault();
+                  onSubmit={(event) => {
+                    event.preventDefault();
                     if (auth.user?.kind === 'candidate') void submit();
                     else setStep('account');
                   }}
                 >
-                  <div className="flex items-center justify-between">
-                    <h2>{portal.existing ? 'Update your recap' : 'Your conversation'}</h2>
-                    {portal.existing && (
-                      <Badge variant="secondary">
-                        <Check className="size-3" />
-                        Connected
-                      </Badge>
-                    )}
-                  </div>
-                  <Field label="The detail to remember">
+                  <h2>{portal.existing ? 'Our conversation' : `A note for ${firstName}`}</h2>
+                  <Field label="The thing we talked about">
                     <Input
                       value={values.highlight}
-                      onChange={(e) => setValues((v) => ({ ...v, highlight: e.target.value }))}
-                      placeholder="Our conversation about CRISPR delivery"
+                      onChange={(event) =>
+                        setValues((current) => ({ ...current, highlight: event.target.value }))
+                      }
+                      placeholder="Our conversation about accessible design"
                       required
                       minLength={4}
                       maxLength={180}
@@ -198,7 +187,9 @@ export default function Connect() {
                   <Field label={portal.event.prompt}>
                     <Textarea
                       value={values.conversation}
-                      onChange={(e) => setValues((v) => ({ ...v, conversation: e.target.value }))}
+                      onChange={(event) =>
+                        setValues((current) => ({ ...current, conversation: event.target.value }))
+                      }
                       placeholder="We discussed…"
                       required
                       minLength={20}
@@ -206,19 +197,21 @@ export default function Connect() {
                       rows={5}
                     />
                   </Field>
-                  <Field label="Role / area of interest" hint="Optional">
+                  <Field label="What you're interested in" hint="Optional">
                     <Input
                       value={values.interest}
-                      onChange={(e) => setValues((v) => ({ ...v, interest: e.target.value }))}
-                      placeholder="Lab technician · gene editing"
+                      onChange={(event) =>
+                        setValues((current) => ({ ...current, interest: event.target.value }))
+                      }
+                      placeholder="Product engineering, design systems"
                       maxLength={300}
                     />
                   </Field>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Your profile, work, and future updates will be shared with{' '}
-                    {portal.recruiter.name.split(' ')[0]}. You can remove this connection from your
-                    profile.
-                  </p>
+                  {!portal.existing && (
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      {firstName} will be able to see your profile and work.
+                    </p>
+                  )}
                   <SubmitButton busy={busy}>
                     {auth.user?.kind === 'candidate'
                       ? portal.existing

@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const binary = fileURLToPath(
   new URL(
-    `../target/release/again-evidence${process.platform === 'win32' ? '.exe' : ''}`,
+    `../target/release/staylinked-evidence${process.platform === 'win32' ? '.exe' : ''}`,
     import.meta.url,
   ),
 );

@@ -1,0 +1,14 @@
+Aisha Patel
+Fictional project note for testing file uploads and source lookup
+
+Offline-first project planner
+
+I built a React and TypeScript application for student teams that need to keep working when their connection drops. Project changes are stored locally in IndexedDB and synchronized when the browser reconnects.
+
+My main contribution was the synchronization flow. I added an operation queue with stable request IDs so retrying a request would not create duplicate tasks. When two people edit the same item, the interface shows both versions and asks the person to resolve the difference.
+
+The API uses Node.js and PostgreSQL. I wrote automated tests for duplicate requests, interrupted synchronization, and conflicting edits. I also checked keyboard navigation and added visible focus states to the task editor.
+
+At the NYU Tech & Design Fair, Maya and I talked about a bug where a retried request appeared as a second task. I explained how an idempotency key let the server recognize a request it had already processed.
+
+The project currently runs in a small test environment. I have not tested it at production scale or implemented end-to-end encryption. My next step is to test synchronization across more browsers and document the failure cases.

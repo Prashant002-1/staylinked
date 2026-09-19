@@ -1,36 +1,47 @@
-# Manual verification guide
+# Manual verification
 
-Use fictional data. Run `npm run check`, then `npm start`. The page title and placeholder name are `again-hr`.
+Use fictional data. Run `npm run check`, then `npm start`. The page title is Staylinked. A fresh database includes Maya Chen at Northstar and six people working in software, design, and data. Existing databases are preserved; use a separate `DATA_DIR` for a clean set of examples.
 
-## Recruiter workflow
+## People and conversations
 
-1. Choose **Recruiter workspace**. Confirm that six seeded connections load.
-2. Search **CRISPR**. Open Aisha's profile; confirm that the event and candidate recap appear first.
-3. Select **Research Lab Technician** under **Role evidence**. Open a quoted source and confirm that the passage appears verbatim.
-4. Choose a different role. Confirm that the requirements and passages change. Missing text must not become a qualification judgment.
-5. Add the person to a role shortlist, close the panel, and open **Roles**. The shortlist count and filtered connections should agree after reload.
-6. Select two rows. Set their status to **Follow-up**, save them, and export. Confirm that only selected records appear in the CSV.
-7. Open **Follow-up** and **Saved**. Confirm the backend state survives a reload.
+1. Enter as the recruiter. Confirm that People shows connected people without a company header, sidebar, status controls, or bookmarks.
+2. Search for Aisha Patel and open her profile. Read the NYU Tech & Design Fair encounter and her work on offline-first software.
+3. Send a short test message. Open the candidate account in a separate browser and confirm that the message appears in the same connection. Reply and check the recruiter view.
+4. Reload both sides. The encounter and messages should persist.
+5. With an unrelated test account, request that connection's messages and materials. The server must deny access.
 
-## Candidate workflow
+## Updates and profile edits
 
-1. Open **Share QR** and select an event. Decode the QR or use **Preview**.
-2. On a separate browser or phone, create a candidate account and submit a specific recap. A single browser shares its session; use the portal's demo switch for a one-browser check.
-3. In **Profile**, edit a field and save. In **Work**, add a note or small text PDF.
-4. Return to the recruiter window or reload. Search for the candidate and inspect the new material.
-5. Edit the recap. In the recruiter panel, **Activity** should retain the original conversation.
-6. Remove a test connection. That recruiter should lose access through it. Another connection to the same recruiter may continue to grant access.
+1. Share a short update as the candidate. Confirm it appears for the connected recruiter and the author.
+2. Edit the update, then reload the recruiter view. Confirm that the edit persists. An unrelated account must not see it.
+3. Edit a profile field on each account type and save. Check the changed introduction from the other side.
+4. Add a candidate project note, then edit its title and text. Upload a small PDF or text file and open it from the recruiter's view.
+5. Delete a test update and note. Confirm their removal after reload. Another user must not be able to edit or delete them.
 
-## UI states
+## Meeting someone new
 
-Check desktop and 390px mobile widths: navigation, scrollable table, person panel, role selection, QR dialog, profile form, and portal. Check Escape and keyboard focus in dialogs and menus. Empty searches should offer a useful recovery action. Form failures should leave entered values intact.
+1. Share the recruiter's event QR and preview its destination.
+2. On a separate browser or phone, create a candidate account and submit a specific recap. One browser shares one session, so switching accounts replaces that session.
+3. Confirm that both people can find their new connection.
+4. Edit the recap. The original encounter should remain available.
+5. Remove this test connection from either side. Its message history should disappear. Updates and file access must end when there is no other connection between those people.
 
-**Integrations** must label Greenhouse, Ashby, Lever, Workday, Gmail, Outlook, Slack, and Google Calendar as **Planned**. No sync should be represented as active. CSV export is the working handoff. Email opens the user's mail client; do not send a message during testing.
+## Work and role lookup
+
+1. From a person's view, choose the Product Engineer role and inspect a quoted passage.
+2. Confirm the quote appears exactly in the referenced source.
+3. Choose Data Engineer. Requirements and passages should reflect the new role.
+4. A missing match must not turn into a qualification judgment. The UI must not assign a person a score or ranking.
+5. Export selected connections if testing CSV. Confirm the file contains only authorized records, without status or saved columns.
+
+## Interface states
+
+Check desktop and 390px phone widths: header navigation, People, Updates, profile editing, conversations, upload controls, event sharing, and the QR portal. Check Escape, keyboard focus, and visible focus rings in dialogs and menus. Empty searches should allow recovery. Form errors should preserve entered values, and long names or messages should not cause horizontal overflow.
 
 ## Model boundary
 
-Without a key, the UI displays **Text matches**, returned by Rust. With a compatible OpenCode Go key, the server can request a source summary. Live provider verification is pending. Controlled-response tests cover the adapter contract, caching, unsupported citations, malformed output, and fallback.
+Without a key, role lookup uses local Rust word matching. With a compatible OpenCode Go key, the server can request a source summary. Live provider verification is pending. Controlled-response tests cover request shape, caching, unsupported citations, malformed output, and fallback. Messages and updates should never trigger model calls.
 
 ## Network setup
 
-Phone and laptop must share a reachable network. The QR uses the laptop's local address, or `PUBLIC_URL` when configured. A network with client isolation may require a hotspot. Local preview is not a deployed public site.
+Phone and laptop must share a reachable network. The QR uses the laptop's local address, or `PUBLIC_URL` when configured. Set `PUBLIC_URL=http://YOUR-LAPTOP-LAN-IP:5173` in `.env` if automatic address selection does not fit the network. A network with client isolation may require a hotspot. Local preview is not a deployed public site.

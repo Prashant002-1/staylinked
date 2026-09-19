@@ -1,34 +1,36 @@
 # Problem and scope
 
-`again-hr` is a temporary name for a prototype built around the information lost between an in-person conversation and a later recruiting decision.
+Staylinked is an HR hackathon submission about maintaining a relationship after meeting in person.
 
 ## Scenario
 
-A candidate and recruiter discuss CRISPR delivery at a university career fair. The recruiter has a reason to remember this person beyond a résumé. Weeks later, a lab role opens. The useful record is the conversation, the candidate's relevant work, and how to contact them.
+At a university career fair, a candidate describes an offline-first application they built. Maya, a talent partner at the fictional software company Northstar, remembers their explanation of a difficult synchronization bug. There may be no suitable opening that day. Weeks later, the candidate has shipped another version, and Maya's team is looking for someone with related experience.
 
-A résumé scanner does not capture that encounter. A contact exchange alone does not retain what made it relevant. Existing recruiting CRMs and networking tools already address parts of this problem; this prototype explores a particular division of effort and record structure, without claiming the category is new.
+The useful record is the person, the conversation, and what has changed since they met. The app keeps those together. The candidate records the initial recap after scanning a QR, both people can share updates, and a private conversation lets them pick things up later.
+
+Existing recruiting CRMs and networking tools address parts of this problem. This project explores a small set of relationship interactions and a particular division of effort, without claiming that the category is new.
 
 ## Design decisions
 
-| Problem                                                 | Implemented choice                                                      | Remaining limitation                                           |
-| ------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Recruiter cannot write notes on every person            | Candidate records the recap after scanning an event QR                  | Candidate must complete a short form and authenticate          |
-| A useful interaction becomes difficult to reconstruct   | Preserve the event, original recap, current recap, and shared materials | Candidate-authored context is not proof of attendance          |
-| A new role changes what matters                         | Show exact source passages for selected role requirements               | Literal matching misses meaning and synonyms                   |
-| Existing recruiting systems remain the system of record | Persist shortlists/status and export selected connections to CSV        | ATS-specific import mapping and live sync are not built        |
-| Candidate work changes after the event                  | Reusable profile and materials feed existing connections                | No email or push notification system                           |
-| Data should remain under the candidate's control        | Authenticated updates, removal, and server-side access checks           | Another connection with the same recruiter still grants access |
+| Problem                                                      | Implemented choice                                                                         | Limit                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| A recruiter cannot take detailed notes on every conversation | The candidate records a short recap through an event QR                                    | The candidate still needs to complete the form and authenticate   |
+| The memorable detail disappears among contact exchanges      | The encounter stays attached to the person, preserving the original recap                  | Author-supplied context does not verify attendance                |
+| A profile goes stale after meeting                           | Both people can update their profile and share updates with their connections              | There is no email or push notification service                    |
+| Reconnecting requires finding the old email thread           | Each connection has a private conversation                                                 | Messages stay inside the app                                      |
+| Work becomes relevant to a new role                          | Exact passages from candidate-supplied work can be inspected against role requirements     | Literal matching misses meaning and synonyms                      |
+| A public network introduces unwanted exposure                | People and updates are limited to direct connections, with no public profiles or discovery | Another connection with the same person continues to grant access |
 
 ## Working scope
 
-Recruiter workspace: searchable connections, event/status filters, new/updated views, saved records, follow-up queue, role-specific shortlists, batch actions, CSV export, event creation, and QR sharing.
+Both sides have People, Updates, an editable profile, and private conversations. Candidates add project notes, upload PDF/TXT/Markdown files, and edit their encounter recap. Recruiters create event portals, share QR codes, and inspect a person's supplied work for a role. Either person can remove a connection.
 
-Candidate workspace: profile, links, skills, project notes, PDF/TXT/Markdown uploads, connection recaps, updates, and removal.
+People can search their connections without assigning them statuses, saved flags, or bookmarks. Company information belongs in a person's introduction where relevant; the company does not become the application's navigation or branding.
 
-Evidence: a Rust executable for bounded word matching, plus an optional OpenCode Go adapter. Both return sources. Neither assigns candidate confidence, ranks people, verifies identity, or decides whom to contact.
+The Rust matcher and optional OpenCode Go adapter return sources. Neither ranks people, verifies identity, assigns candidate confidence, or decides whom to contact. There is no public feed, automated messaging, or lie detection.
 
 ## Questions for a small usability study
 
-Can candidates record the useful detail without rewriting their résumé? Can recruiters locate a remembered person weeks later? Does source visibility help them assess a role without reading every file? Does the CSV handoff fit their existing process?
+Can candidates record the useful detail without rewriting their résumé? Can either person find a remembered conversation weeks later? Is it easy to share a small update or restart the conversation? Can a recruiter inspect relevant work without reading every file?
 
-Measure time on those tasks and observe errors. No measured recruiting outcome, time saving, or trust improvement is claimed by this repository.
+Measure time on those tasks and observe errors. No recruiting outcome, time saving, or trust improvement has been measured by this project.

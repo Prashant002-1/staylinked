@@ -13,14 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Badge } from '@/components/ui/badge';
 export function Brand() {
   return (
-    <Link to="/" className="brand" aria-label="again-hr home">
+    <Link to="/" className="brand" aria-label="Staylinked home">
       <span className="brand-mark">
         <RotateCw size={18} strokeWidth={2.4} />
       </span>
-      again-hr
+      Staylinked
     </Link>
   );
 }
@@ -29,18 +28,6 @@ const avatarUrl = (name: string) => {
   for (const character of name) hash = Math.imul(hash ^ character.codePointAt(0)!, 16777619) >>> 0;
   return `/avatars/person-${hash % 32}.svg`;
 };
-export function CompanyAvatar({ name = '', small = false }: { name?: string; small?: boolean }) {
-  const source = name.toLowerCase().includes('helix') ? 'helix-bio' : 'workspace';
-  return (
-    <img
-      src={`/companies/${source}.svg`}
-      alt=""
-      className={cn('company-logo', small && 'company-logo-small')}
-      width={small ? 20 : 34}
-      height={small ? 20 : 34}
-    />
-  );
-}
 export function Avatar({
   name,
   size = 'normal',
@@ -52,8 +39,8 @@ export function Avatar({
   return (
     <AvatarRoot
       className={cn(
-        'rounded-xl',
-        size === 'small' ? 'size-7' : size === 'large' ? 'size-14' : 'size-9',
+        'person-avatar rounded-full',
+        size === 'small' ? 'size-8' : size === 'large' ? 'size-20' : 'size-10',
       )}
     >
       <AvatarImage src={avatarUrl(name)} alt="" className="rounded-[inherit]" />
@@ -202,20 +189,5 @@ export function Hint({ label, children }: { label: string; children: ReactNode }
       <TooltipTrigger render={<span className="inline-flex" />}>{children}</TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
-  );
-}
-export const stages = [
-  { value: 'new', label: 'New' },
-  { value: 'reviewed', label: 'Reviewed' },
-  { value: 'follow-up', label: 'Follow-up' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'archived', label: 'Archived' },
-];
-export function Status({ value }: { value: string }) {
-  return (
-    <Badge variant="outline" className={cn('status-badge font-normal', `status-${value}`)}>
-      <span className="status-indicator" />
-      {stages.find((s) => s.value === value)?.label || value}
-    </Badge>
   );
 }

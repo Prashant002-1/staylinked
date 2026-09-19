@@ -42,7 +42,13 @@ async function fixture() {
     aiConfig: { apiKey: '' },
   });
   const server = app.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  try {
+    await once(server, 'listening');
+  } catch (error) {
+    db.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    throw error;
+  }
   const base = `http://127.0.0.1:${server.address().port}`;
   const client = () => {
     let cookie = '';
@@ -93,7 +99,7 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
   let connectionId, materialId, candidateId;
   await t.test('public invite works but private workspace requires a session', async () => {
     assert.equal((await anonymous('/workspace')).status, 401);
-    const portal = await anonymous('/portal/nyu-science-fair');
+    const portal = await anonymous('/portal/nyu-tech-fair');
     assert.equal(portal.status, 200);
     assert.equal(portal.data.recruiter.name, 'Maya Chen');
     assert.equal(portal.data.recruiter.email, undefined);
@@ -103,11 +109,11 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
     assert.match(login.headers.get('set-cookie'), /SameSite=Lax/);
   });
   await t.test('QR decodes to the exact working event route', async () => {
-    const { data } = await recruiter('/events/nyu-science-fair/qr');
+    const { data } = await recruiter('/events/nyu-tech-fair/qr');
     const png = PNG.sync.read(Buffer.from(data.image.split(',')[1], 'base64'));
     const decoded = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
     assert.equal(decoded.data, data.url);
-    assert.equal(new URL(decoded.data).pathname, '/connect/nyu-science-fair');
+    assert.equal(new URL(decoded.data).pathname, '/connect/nyu-tech-fair');
     assert.equal(data.localOnly, false);
     assert.equal(
       (await anonymous('/portal/' + new URL(decoded.data).pathname.split('/').pop())).status,
@@ -132,11 +138,11 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
           method: 'PUT',
           body: {
             name: 'Taylor Demo',
-            headline: 'Cell biology researcher',
+            headline: 'Frontend engineer',
             location: 'Brooklyn',
-            bio: 'I run mammalian cell culture experiments and keep a detailed lab notebook.',
+            bio: 'I build React and TypeScript interfaces with offline editing and keyboard accessibility.',
             links: [{ label: 'Research', url: 'https://example.com/research' }],
-            tags: ['Cell culture'],
+            tags: ['React'],
           },
         })
       ).status,
@@ -159,32 +165,36 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
     );
   });
   await t.test('connect is idempotent and preserves original encounter context', async () => {
-    const first = await candidate('/portal/nyu-science-fair/connect', {
+    const first = await candidate('/portal/nyu-tech-fair/connect', {
       method: 'POST',
       body: {
-        highlight: 'CRISPR delivery controls',
-        conversation: 'We discussed CRISPR delivery controls and the new gene editing team.',
-        interest: 'Lab technician',
+        highlight: 'Offline editing conflicts',
+        conversation: 'We discussed Offline editing conflicts and the new collaboration team.',
+        interest: 'Product engineer',
       },
     });
     assert.equal(first.status, 201);
     connectionId = first.data.connection.id;
     assert.equal(first.data.connection.remembered, undefined);
-    const second = await candidate('/portal/nyu-science-fair/connect', {
+    const second = await candidate('/portal/nyu-tech-fair/connect', {
       method: 'POST',
       body: {
-        highlight: 'CRISPR delivery controls',
-        conversation: 'We discussed CRISPR delivery controls and my lab notebook workflow.',
-        interest: 'Lab technician',
+        highlight: 'Offline editing conflicts',
+        conversation:
+          'We discussed Offline editing conflicts and my keyboard accessibility workflow.',
+        interest: 'Product engineer',
       },
     });
     assert.equal(second.status, 200);
     assert.equal(second.data.connection.id, connectionId);
-    assert.match(second.data.connection.originalConversation, /new gene editing team/);
-    assert.match(second.data.connection.conversation, /lab notebook workflow/);
+    assert.match(second.data.connection.originalConversation, /new collaboration team/);
+    assert.match(second.data.connection.conversation, /keyboard accessibility workflow/);
     const workspace = await recruiter('/workspace');
     assert.equal(workspace.data.connections.filter((c) => c.candidateId === candidateId).length, 1);
-    assert.equal(workspace.data.connections.find((c) => c.id === connectionId).remembered, false);
+    assert.equal(
+      workspace.data.connections.find((c) => c.id === connectionId).remembered,
+      undefined,
+    );
     const persisted = openDatabase(join(f.dataDir, 'again.sqlite'));
     assert.ok(persisted.prepare('SELECT id FROM connections WHERE id=?').get(connectionId));
     persisted.close();
@@ -196,14 +206,14 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
       body.append(
         'file',
         new Blob([
-          'My project: I maintained mammalian cell culture, performed PCR and DNA extraction, and documented protocols in a lab notebook.',
+          'My project: I built a React and TypeScript interface with offline editing. I wrote automated tests for reconnecting after sync failures.',
         ]),
         'research.txt',
       );
       const upload = await candidate('/materials/upload', { method: 'POST', body });
       assert.equal(upload.status, 201);
       materialId = upload.data.material.id;
-      assert.match(upload.data.material.text, /mammalian cell culture/);
+      assert.match(upload.data.material.text, /offline editing/);
       assert.equal(upload.data.material.path, undefined);
       assert.equal((await candidate(`/materials/${materialId}/download`)).status, 200);
       assert.equal((await recruiter(`/materials/${materialId}/download`)).status, 200);
@@ -237,7 +247,7 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
   await t.test('role lens cites original text and changes when the role changes', async () => {
     const lab = await recruiter(`/workspace/connections/${connectionId}/brief`, {
       method: 'POST',
-      body: { roleId: 'lab-technician' },
+      body: { roleId: 'product-engineer' },
     });
     assert.equal(lab.status, 200);
     assert.equal(lab.data.brief.mode, 'local');
@@ -245,22 +255,20 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
       assert.ok(
         lab.data.sources.find((s) => s.id === finding.sourceId).text.includes(finding.quote),
       );
-    assert.ok(
-      lab.data.brief.findings.find((v) => v.requirement === 'Mammalian cell culture').quote,
-    );
+    assert.ok(lab.data.brief.findings.find((v) => v.requirement === 'Offline editing').quote);
     const software = await recruiter(`/workspace/connections/${connectionId}/brief`, {
       method: 'POST',
-      body: { roleId: 'research-engineer' },
+      body: { roleId: 'data-engineer' },
     });
     assert.equal(
-      software.data.brief.findings.find((v) => v.requirement === 'React and TypeScript').sourceId,
+      software.data.brief.findings.find((v) => v.requirement === 'CSV validation').sourceId,
       null,
     );
     assert.equal(
       (
         await stranger(`/workspace/connections/${connectionId}/brief`, {
           method: 'POST',
-          body: { roleId: 'lab-technician' },
+          body: { roleId: 'product-engineer' },
         })
       ).status,
       404,
@@ -279,49 +287,27 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
     const body = new FormData();
     body.append(
       'file',
-      new Blob([textPdf('CRISPR research: I designed guide RNA controls and recorded results.')], {
-        type: 'application/pdf',
-      }),
+      new Blob(
+        [
+          textPdf(
+            'Product project: I built keyboard navigation and tested reconnecting after sync failures.',
+          ),
+        ],
+        {
+          type: 'application/pdf',
+        },
+      ),
       'research-paper.pdf',
     );
     const uploaded = await candidate('/materials/upload', { method: 'POST', body });
     assert.equal(uploaded.status, 201);
     assert.equal(uploaded.data.material.extraction, 'ready');
-    assert.match(uploaded.data.material.text, /guide RNA controls/);
+    assert.match(uploaded.data.material.text, /keyboard navigation/);
     assert.ok(
       (await recruiter('/workspace')).data.connections
         .find((c) => c.id === connectionId)
-        .materials.some((m) => m.text.includes('guide RNA controls')),
+        .materials.some((m) => m.text.includes('keyboard navigation')),
     );
-  });
-  await t.test('recruiter can remember and save without changing the candidate recap', async () => {
-    const changed = await recruiter(`/workspace/connections/${connectionId}`, {
-      method: 'PATCH',
-      body: { saved: true, remembered: true },
-    });
-    assert.equal(changed.data.connection.saved, true);
-    assert.equal(changed.data.connection.remembered, true);
-    assert.equal(
-      (
-        await stranger(`/workspace/connections/${connectionId}`, {
-          method: 'PATCH',
-          body: { saved: true },
-        })
-      ).status,
-      404,
-    );
-    assert.equal(
-      (
-        await recruiter(`/workspace/connections/${connectionId}`, {
-          method: 'PATCH',
-          body: { conversation: 'rewritten' },
-        })
-      ).status,
-      400,
-    );
-    const view = await candidate('/candidate');
-    assert.equal(view.data.connections[0].saved, undefined);
-    assert.equal(view.data.connections[0].remembered, undefined);
   });
   await t.test('new events and roles work without seed data assumptions', async () => {
     const event = await recruiter('/events', {
@@ -341,10 +327,10 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
     const role = await recruiter('/roles', {
       method: 'POST',
       body: {
-        title: 'Assay Researcher',
-        team: 'Research',
-        description: 'Develop reliable assays and maintain reproducible lab procedures.',
-        requirements: ['PCR', 'Lab notebook'],
+        title: 'Design Engineer',
+        team: 'Product',
+        description: 'Build accessible interfaces and thoughtful error recovery.',
+        requirements: ['React', 'Accessibility'],
       },
     });
     assert.equal(role.status, 201);
@@ -363,8 +349,8 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
       method: 'PUT',
       body: {
         name: 'Taylor Demo',
-        headline: 'Updated researcher',
-        bio: 'New project in genomics.',
+        headline: 'Updated engineer',
+        bio: 'New project in collaborative editing.',
         links: [],
         tags: [],
       },
@@ -372,7 +358,7 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
     assert.equal(
       (await recruiter('/workspace')).data.connections.find((c) => c.id === connectionId).candidate
         .headline,
-      'Updated researcher',
+      'Updated engineer',
     );
     assert.equal(
       (await candidate(`/connections/${connectionId}`, { method: 'DELETE' })).status,
@@ -383,7 +369,7 @@ test('both sides: invite, persist, share work, rediscover, and revoke access', a
       (
         await recruiter(`/workspace/connections/${connectionId}/brief`, {
           method: 'POST',
-          body: { roleId: 'lab-technician' },
+          body: { roleId: 'product-engineer' },
         })
       ).status,
       404,
@@ -587,7 +573,355 @@ test('OpenCode Go adapter: exact citations, caching, and honest failure mode', a
   });
 });
 
-test('recruiter batch workflow, role ownership, CSV handoff and private state', async (t) => {
+test('private relationships: updates, messages, ownership, and disconnect', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const recruiter = f.client(),
+    candidate = f.client(),
+    other = f.client(),
+    peer = f.client(),
+    anonymous = f.client();
+  await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  const otherAccount = await other('/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'Other Recruiter',
+      email: 'other@test.example',
+      password: 'other-test-password',
+      kind: 'recruiter',
+      company: 'Other software team',
+    },
+  });
+  await peer('/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'Another Candidate',
+      email: 'peer@test.example',
+      password: 'peer-test-password',
+      kind: 'candidate',
+    },
+  });
+  await peer('/portal/nyu-tech-fair/connect', {
+    method: 'POST',
+    body: {
+      highlight: 'Our conversation about React',
+      conversation: 'We talked about a React interface for a community project.',
+    },
+  });
+  const connectionId = 'connection-aisha-demo';
+  let updateId, materialId;
+
+  await t.test('updates are visible only to the author and directly connected people', async () => {
+    assert.equal((await anonymous('/updates')).status, 401);
+    const strangerFeed = await other('/updates');
+    assert.deepEqual(strangerFeed.data.updates, []);
+    const candidateFeed = (await candidate('/updates')).data.updates;
+    assert.ok(candidateFeed.some((u) => u.authorId === 'aisha-demo'));
+    assert.ok(candidateFeed.some((u) => u.authorId === 'recruiter-demo'));
+    assert.ok(candidateFeed.every((u) => ['aisha-demo', 'recruiter-demo'].includes(u.authorId)));
+    assert.ok(candidateFeed.every((u) => u.author.email === undefined));
+    const peerFeed = (await peer('/updates')).data.updates;
+    assert.ok(peerFeed.every((u) => u.authorId === 'recruiter-demo'));
+    const recruiterFeed = (await recruiter('/updates')).data.updates;
+    assert.ok(recruiterFeed.some((u) => u.authorId === 'jun-demo'));
+    assert.ok(recruiterFeed.some((u) => u.authorId === 'aisha-demo'));
+  });
+  await t.test(
+    'each side creates updates but only its author can edit or delete them',
+    async () => {
+      const posted = await candidate('/updates', {
+        method: 'POST',
+        body: { text: '  Shipped the keyboard navigation update today.  ' },
+      });
+      assert.equal(posted.status, 201);
+      updateId = posted.data.update.id;
+      assert.equal(posted.data.update.text, 'Shipped the keyboard navigation update today.');
+      assert.equal(posted.data.update.author.id, 'aisha-demo');
+      assert.equal((await recruiter('/updates')).data.updates[0].id, updateId);
+      const createdAt = posted.data.update.createdAt;
+      const edited = await candidate(`/updates/${updateId}`, {
+        method: 'PATCH',
+        body: { text: 'Shipped keyboard navigation and added a regression test.' },
+      });
+      assert.equal(edited.status, 200);
+      assert.equal(edited.data.update.createdAt, createdAt);
+      assert.ok(edited.data.update.updatedAt);
+      for (const client of [recruiter, other, peer]) {
+        assert.equal(
+          (await client(`/updates/${updateId}`, { method: 'PATCH', body: { text: 'Not yours' } }))
+            .status,
+          404,
+        );
+        assert.equal((await client(`/updates/${updateId}`, { method: 'DELETE' })).status, 404);
+      }
+      assert.equal(
+        (await candidate('/updates', { method: 'POST', body: { text: '  ' } })).status,
+        400,
+      );
+      assert.equal(
+        (await candidate('/updates', { method: 'POST', body: { text: 'a'.repeat(3001) } })).status,
+        400,
+      );
+      assert.equal(
+        (
+          await candidate('/updates', {
+            method: 'POST',
+            body: { text: 'hello', authorId: 'recruiter-demo' },
+          })
+        ).status,
+        400,
+      );
+      const recruiterPost = await recruiter('/updates', {
+        method: 'POST',
+        body: { text: 'We are exploring collaborative editing this week.' },
+      });
+      assert.equal(recruiterPost.status, 201);
+      assert.ok(
+        (await candidate('/updates')).data.updates.some(
+          (u) => u.id === recruiterPost.data.update.id,
+        ),
+      );
+      assert.equal(
+        (await recruiter(`/updates/${recruiterPost.data.update.id}`, { method: 'DELETE' })).status,
+        200,
+      );
+      assert.ok(
+        !(await candidate('/updates')).data.updates.some(
+          (u) => u.id === recruiterPost.data.update.id,
+        ),
+      );
+    },
+  );
+  await t.test(
+    'messages persist in order and are accessible only to the two participants',
+    async () => {
+      const existing = (await candidate(`/connections/${connectionId}/messages`)).data.messages;
+      assert.equal(existing.length, 2);
+      const sent = await candidate(`/connections/${connectionId}/messages`, {
+        method: 'POST',
+        body: { text: 'Happy to walk through the new version together.' },
+      });
+      assert.equal(sent.status, 201);
+      assert.equal(sent.data.message.senderId, 'aisha-demo');
+      const reply = await recruiter(`/connections/${connectionId}/messages`, {
+        method: 'POST',
+        body: { text: 'That sounds good. What changed since the fair?' },
+      });
+      assert.equal(reply.status, 201);
+      const thread = (await candidate(`/connections/${connectionId}/messages`)).data.messages;
+      assert.deepEqual(
+        thread.slice(-2).map((m) => m.id),
+        [sent.data.message.id, reply.data.message.id],
+      );
+      const persisted = openDatabase(join(f.dataDir, 'again.sqlite'));
+      assert.equal(
+        JSON.parse(
+          persisted.prepare('SELECT data FROM messages WHERE id=?').get(sent.data.message.id).data,
+        ).text,
+        sent.data.message.text,
+      );
+      persisted.close();
+      for (const client of [other, peer]) {
+        assert.equal((await client(`/connections/${connectionId}/messages`)).status, 404);
+        assert.equal(
+          (
+            await client(`/connections/${connectionId}/messages`, {
+              method: 'POST',
+              body: { text: 'Intrusion' },
+            })
+          ).status,
+          404,
+        );
+        assert.equal(
+          (await client(`/connections/${connectionId}`, { method: 'DELETE' })).status,
+          404,
+        );
+      }
+      assert.equal((await anonymous(`/connections/${connectionId}/messages`)).status, 401);
+      assert.equal(
+        (
+          await candidate(`/connections/${connectionId}/messages`, {
+            method: 'POST',
+            body: { text: '' },
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await candidate(`/connections/${connectionId}/messages`, {
+            method: 'POST',
+            body: { text: 'Spoof', senderId: 'recruiter-demo' },
+          })
+        ).status,
+        400,
+      );
+    },
+  );
+  await t.test(
+    'both sides edit their own profile and candidates can revise only their own notes',
+    async () => {
+      const changed = await recruiter('/profile', {
+        method: 'PUT',
+        body: {
+          name: 'Maya Chen',
+          headline: 'Building thoughtful product teams',
+          bio: 'I work with engineers and designers at Northstar.',
+          location: 'Brooklyn',
+          links: [],
+          tags: ['Product'],
+        },
+      });
+      assert.equal(changed.status, 200);
+      const recruiterProfile = (await candidate('/candidate')).data.connections[0].recruiter;
+      assert.equal(recruiterProfile.id, 'recruiter-demo');
+      assert.equal(recruiterProfile.headline, 'Building thoughtful product teams');
+      assert.equal(recruiterProfile.email, 'maya@northstar.example');
+      const note = await candidate('/materials/note', {
+        method: 'POST',
+        body: {
+          title: 'Project decision log',
+          text: 'We chose explicit conflict resolution after a usability session.',
+        },
+      });
+      materialId = note.data.material.id;
+      const edited = await candidate(`/materials/${materialId}`, {
+        method: 'PATCH',
+        body: {
+          title: 'Updated decision log',
+          text: 'We now show changes grouped by trip stop, with a keyboard-accessible comparison.',
+        },
+      });
+      assert.equal(edited.status, 200);
+      assert.equal(edited.data.material.createdAt, note.data.material.createdAt);
+      assert.ok(edited.data.material.updatedAt);
+      assert.equal(
+        (
+          await peer(`/materials/${materialId}`, {
+            method: 'PATCH',
+            body: { title: 'Not yours', text: 'This must not replace the original work.' },
+          })
+        ).status,
+        404,
+      );
+      assert.equal(
+        (
+          await recruiter(`/materials/${materialId}`, {
+            method: 'PATCH',
+            body: { title: 'Not yours', text: 'This must not replace the original work.' },
+          })
+        ).status,
+        403,
+      );
+      const upload = new FormData();
+      upload.append(
+        'file',
+        new Blob(['An uploaded document is edited by replacing the file.']),
+        'project.txt',
+      );
+      const file = await candidate('/materials/upload', { method: 'POST', body: upload });
+      assert.equal(
+        (
+          await candidate(`/materials/${file.data.material.id}`, {
+            method: 'PATCH',
+            body: {
+              title: 'Replacement',
+              text: 'The extracted text must stay consistent with the original file.',
+            },
+          })
+        ).status,
+        400,
+      );
+    },
+  );
+  await t.test('feeds and messages return a bounded recent window', async () => {
+    for (let i = 0; i < 105; i++) {
+      const createdAt = new Date(Date.UTC(2026, 10, 1, 0, i)).toISOString();
+      const update = {
+        id: `bounded-update-${i}`,
+        authorId: otherAccount.data.user.id,
+        text: `Update ${i}`,
+        createdAt,
+      };
+      f.db
+        .prepare('INSERT INTO updates VALUES (?,?,?,?)')
+        .run(update.id, update.authorId, createdAt, JSON.stringify(update));
+      const message = {
+        id: `bounded-message-${i}`,
+        connectionId,
+        senderId: 'aisha-demo',
+        text: `Message ${i}`,
+        createdAt,
+      };
+      f.db
+        .prepare('INSERT INTO messages VALUES (?,?,?,?,?)')
+        .run(message.id, connectionId, message.senderId, createdAt, JSON.stringify(message));
+    }
+    const updates = (await other('/updates')).data.updates;
+    assert.equal(updates.length, 100);
+    assert.equal(updates[0].text, 'Update 104');
+    assert.equal(updates[99].text, 'Update 5');
+    const messages = (await recruiter(`/connections/${connectionId}/messages`)).data.messages;
+    assert.equal(messages.length, 100);
+    assert.equal(messages[0].text, 'Message 5');
+    assert.equal(messages[99].text, 'Message 104');
+  });
+  await t.test(
+    'disconnect removes its thread while another encounter preserves the relationship',
+    async () => {
+      const second = await candidate('/portal/nyc-builder-meetup/connect', {
+        method: 'POST',
+        body: {
+          highlight: 'Another conversation',
+          conversation: 'We met again to discuss the updated offline editing project.',
+        },
+      });
+      assert.equal(second.status, 201);
+      const secondId = second.data.connection.id;
+      const retained = await candidate(`/connections/${secondId}/messages`, {
+        method: 'POST',
+        body: { text: 'A separate conversation from the meetup.' },
+      });
+      assert.equal(
+        (await recruiter(`/connections/${connectionId}`, { method: 'DELETE' })).status,
+        200,
+      );
+      assert.equal((await candidate(`/connections/${connectionId}/messages`)).status, 404);
+      assert.equal(
+        f.db
+          .prepare('SELECT COUNT(*) AS count FROM messages WHERE connection_id=?')
+          .get(connectionId).count,
+        0,
+      );
+      assert.ok((await recruiter('/updates')).data.updates.some((u) => u.id === updateId));
+      assert.equal(
+        (await recruiter(`/connections/${secondId}/messages`)).data.messages[0].id,
+        retained.data.message.id,
+      );
+      assert.equal((await candidate(`/connections/${secondId}`, { method: 'DELETE' })).status, 200);
+      assert.equal((await recruiter(`/connections/${secondId}/messages`)).status, 404);
+      assert.equal(
+        (
+          await recruiter(`/connections/${secondId}/messages`, {
+            method: 'POST',
+            body: { text: 'After disconnect' },
+          })
+        ).status,
+        404,
+      );
+      assert.ok(
+        !(await recruiter('/updates')).data.updates.some((u) => u.authorId === 'aisha-demo'),
+      );
+      assert.ok(
+        (await candidate('/updates')).data.updates.every((u) => u.authorId === 'aisha-demo'),
+      );
+      assert.equal((await candidate(`/updates/${updateId}`, { method: 'DELETE' })).status, 200);
+    },
+  );
+});
+
+test('legacy workflow is removed; CSV and private source access remain scoped', async (t) => {
   const f = await fixture();
   t.after(f.cleanup);
   const recruiter = f.client(),
@@ -603,118 +937,77 @@ test('recruiter batch workflow, role ownership, CSV handoff and private state', 
       email: 'other@test.example',
       password: 'other-test-password',
       kind: 'recruiter',
-      company: 'Other lab',
     },
   });
   const ids = ['connection-aisha-demo', 'connection-jun-demo'];
-  await t.test('bulk changes persist together and shortlist entries do not duplicate', async () => {
-    const changes = { stage: 'follow-up', saved: true, roleId: 'lab-technician', shortlist: true };
-    const result = await recruiter('/workspace/connections', {
-      method: 'PATCH',
-      body: { ids, changes },
-    });
-    assert.equal(result.status, 200);
-    assert.equal(result.data.connections.length, 2);
-    assert.ok(
-      result.data.connections.every(
-        (c) => c.stage === 'follow-up' && c.saved && c.shortlistedRoles.includes('lab-technician'),
-      ),
-    );
-    await recruiter('/workspace/connections', { method: 'PATCH', body: { ids, changes } });
-    const reread = await recruiter('/workspace');
-    assert.equal(reread.data.connections.find((c) => c.id === ids[0]).shortlistedRoles.length, 1);
-    assert.equal(
-      (await other('/workspace/connections', { method: 'PATCH', body: { ids, changes } })).status,
-      404,
-    );
-    const failed = await recruiter('/workspace/connections', {
-      method: 'PATCH',
-      body: { ids: [ids[0], 'missing-id'], changes: { stage: 'archived' } },
-    });
-    assert.equal(failed.status, 404);
-    assert.equal(
-      (await recruiter('/workspace')).data.connections.find((c) => c.id === ids[0]).stage,
-      'follow-up',
-    );
-  });
-  await t.test('role ownership and paired shortlist arguments are enforced', async () => {
-    const foreign = await other('/roles', {
-      method: 'POST',
-      body: {
-        title: 'Private role',
-        team: 'Other team',
-        description: 'A private role with a different recruiting team.',
-        requirements: ['PCR'],
-      },
-    });
-    assert.equal(
-      (
-        await recruiter('/workspace/connections', {
-          method: 'PATCH',
-          body: { ids, changes: { roleId: foreign.data.role.id, shortlist: true } },
-        })
-      ).status,
-      404,
-    );
-    assert.equal(
-      (
-        await recruiter('/workspace/connections', {
-          method: 'PATCH',
-          body: { ids, changes: { shortlist: true } },
-        })
-      ).status,
-      400,
-    );
-    assert.equal(
-      (
-        await recruiter(`/workspace/connections/${ids[0]}`, {
-          method: 'PATCH',
-          body: { stage: 'automatic-hire' },
-        })
-      ).status,
-      400,
-    );
-    const removed = await recruiter(`/workspace/connections/${ids[0]}`, {
-      method: 'PATCH',
-      body: { roleId: 'lab-technician', shortlist: false },
-    });
-    assert.deepEqual(removed.data.connection.shortlistedRoles, []);
-  });
-  await t.test(
-    'private recruiting status is not exposed on candidate or public routes',
-    async () => {
-      const privateFields = [
-        'saved',
-        'remembered',
-        'stage',
-        'shortlistedRoles',
-        'recruiterUpdatedAt',
-      ];
-      const candidateView = await candidate('/candidate');
-      const portal = await candidate('/portal/nyu-science-fair');
-      for (const connection of [...candidateView.data.connections, portal.data.existing]) {
-        for (const field of privateFields) assert.equal(connection[field], undefined);
-      }
-    },
+  const row = f.db.prepare('SELECT data FROM connections WHERE id=?').get(ids[0]);
+  const record = {
+    ...JSON.parse(row.data),
+    saved: true,
+    remembered: true,
+    stage: 'follow-up',
+    shortlistedRoles: ['product-engineer'],
+    recruiterUpdatedAt: '2026-09-19',
+    highlight: '=HYPERLINK("https://example.com")',
+  };
+  f.db.prepare('UPDATE connections SET data=? WHERE id=?').run(JSON.stringify(record), ids[0]);
+  const privateFields = ['saved', 'remembered', 'stage', 'shortlistedRoles', 'recruiterUpdatedAt'];
+  const views = [
+    ...(await candidate('/candidate')).data.connections,
+    ...(await recruiter('/workspace')).data.connections,
+    (await candidate('/portal/nyu-tech-fair')).data.existing,
+  ];
+  for (const connection of views)
+    for (const field of privateFields) assert.equal(connection[field], undefined);
+  assert.equal(
+    (
+      await recruiter(`/workspace/connections/${ids[0]}`, {
+        method: 'PATCH',
+        body: { saved: false },
+      })
+    ).status,
+    404,
   );
-  await t.test('CSV is scoped, deduplicated and safe to open in a spreadsheet', async () => {
-    assert.equal(
-      (await anonymous('/workspace/export', { method: 'POST', body: { ids } })).status,
-      401,
-    );
-    assert.equal((await other('/workspace/export', { method: 'POST', body: { ids } })).status, 404);
-    const row = f.db.prepare('SELECT data FROM connections WHERE id=?').get(ids[0]);
-    const record = JSON.parse(row.data);
-    record.highlight = '=HYPERLINK("https://example.com")';
-    f.db.prepare('UPDATE connections SET data=? WHERE id=?').run(JSON.stringify(record), ids[0]);
-    const result = await recruiter('/workspace/export', {
-      method: 'POST',
-      body: { ids: [ids[0], ids[0]] },
-    });
-    assert.equal(result.status, 200);
-    assert.match(result.headers.get('content-type'), /text\/csv/);
-    assert.match(result.data, /"Name","Email"/);
-    assert.match(result.data, /"'=HYPERLINK\(""https:\/\/example.com""\)"/);
-    assert.equal(result.data.match(/Aisha Patel/g).length, 1);
+  assert.equal(
+    (
+      await recruiter('/workspace/connections', {
+        method: 'PATCH',
+        body: { ids, changes: { saved: false } },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (await anonymous('/workspace/export', { method: 'POST', body: { ids } })).status,
+    401,
+  );
+  assert.equal((await other('/workspace/export', { method: 'POST', body: { ids } })).status, 404);
+  const exported = await recruiter('/workspace/export', {
+    method: 'POST',
+    body: { ids: [ids[0], ids[0]] },
   });
+  assert.equal(exported.status, 200);
+  assert.match(exported.headers.get('content-type'), /text\/csv/);
+  assert.match(exported.data, /"Name","Email"/);
+  assert.doesNotMatch(exported.data, /"Status"|"Saved"/);
+  assert.match(exported.data, /"'=HYPERLINK\(""https:\/\/example.com""\)"/);
+  assert.equal(exported.data.match(/Aisha Patel/g).length, 1);
+  const foreign = await other('/roles', {
+    method: 'POST',
+    body: {
+      title: 'Private role',
+      team: 'Other team',
+      description: 'A private role with a different recruiting team.',
+      requirements: ['React'],
+    },
+  });
+  assert.equal(
+    (
+      await recruiter(`/workspace/connections/${ids[0]}/brief`, {
+        method: 'POST',
+        body: { roleId: foreign.data.role.id },
+      })
+    ).status,
+    404,
+  );
 });

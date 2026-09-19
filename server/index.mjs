@@ -13,7 +13,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 const port = Number(process.env.PORT || 5173);
 app.listen(port, '0.0.0.0', () => {
-  console.log(`again-hr is ready at http://localhost:${port}`);
+  console.log(`Staylinked is ready at http://localhost:${port}`);
   for (const items of Object.values(networkInterfaces()))
     for (const item of items || []) {
       if (item.family === 'IPv4' && !item.internal)

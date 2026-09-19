@@ -8,7 +8,7 @@ import { z } from 'zod';
 import QRCode from 'qrcode';
 import { openDatabase, seedDemo, uid, hashPassword, checkPassword, parse } from './db.mjs';
 import { sourcesFor, buildBrief } from './briefs.mjs';
-import { workflowChanges, applyWorkflow, connectionsCsv } from './workflow.mjs';
+import { connectionsCsv } from './workflow.mjs';
 
 const short = z.string().trim().min(1).max(180);
 const link = z.object({
@@ -21,6 +21,7 @@ const link = z.object({
 });
 const profileSchema = z.object({
   name: short,
+  company: z.string().trim().max(120).optional(),
   headline: z.string().trim().max(180),
   location: z.string().trim().max(180).default(''),
   bio: z.string().trim().max(8000),
@@ -31,6 +32,20 @@ const connectionSchema = z.object({
   conversation: z.string().trim().min(20).max(3000),
   highlight: z.string().trim().min(4).max(180),
   interest: z.string().trim().max(300).default(''),
+});
+const updateSchema = z.object({ text: z.string().trim().min(1).max(3000) }).strict();
+const messageSchema = z.object({ text: z.string().trim().min(1).max(4000) }).strict();
+const noteSchema = z.object({ title: short, text: z.string().trim().min(20).max(30000) });
+const publicPerson = ({ id, kind, name, headline, bio, location, company, links, tags }) => ({
+  id,
+  kind,
+  name,
+  headline,
+  bio,
+  location,
+  company,
+  links,
+  tags,
 });
 const digest = (token) => createHash('sha256').update(token).digest('hex');
 const safeMaterial = ({ path, ...material }) => material;
@@ -111,7 +126,7 @@ export function createApp(options = {}) {
   const auth = (kind) => (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Please sign in to continue.' });
     if (kind && req.user.kind !== kind)
-      return res.status(403).json({ error: 'This action belongs to the other workspace.' });
+      return res.status(403).json({ error: 'This action is not available for your account.' });
     next();
   };
   const session = (req, res, user) => {
@@ -140,7 +155,7 @@ export function createApp(options = {}) {
       .map(parse);
   const eventFor = (id) => parse(db.prepare('SELECT data FROM events WHERE id=?').get(id));
   const expand = (connection) => ({
-    ...connection,
+    ...stripPrivate(connection),
     candidate: getUser(connection.candidateId),
     event: eventFor(connection.eventId),
     materials: materialsFor(connection.candidateId).map(safeMaterial),
@@ -155,6 +170,101 @@ export function createApp(options = {}) {
     }
     return parse(row);
   };
+
+  const participantConnection = (req, res) => {
+    const connection = parse(
+      db
+        .prepare('SELECT data FROM connections WHERE id=? AND (candidate_id=? OR recruiter_id=?)')
+        .get(req.params.id, req.user.id, req.user.id),
+    );
+    if (!connection) res.status(404).json({ error: 'Connection not found.' });
+    return connection;
+  };
+  const expandUpdate = (update) => ({ ...update, author: publicPerson(getUser(update.authorId)) });
+
+  app.get('/api/updates', auth(), (req, res) => {
+    const updates = db
+      .prepare(
+        `
+      SELECT updates.data FROM updates
+      WHERE author_id=? OR author_id IN (
+        SELECT recruiter_id FROM connections WHERE candidate_id=?
+        UNION SELECT candidate_id FROM connections WHERE recruiter_id=?
+      ) ORDER BY created_at DESC, id DESC LIMIT 100
+    `,
+      )
+      .all(req.user.id, req.user.id, req.user.id)
+      .map(parse)
+      .map(expandUpdate);
+    res.json({ updates });
+  });
+  app.post('/api/updates', auth(), (req, res) => {
+    const input = updateSchema.parse(req.body);
+    const update = {
+      id: uid(),
+      authorId: req.user.id,
+      ...input,
+      createdAt: new Date().toISOString(),
+    };
+    db.prepare('INSERT INTO updates VALUES (?,?,?,?)').run(
+      update.id,
+      update.authorId,
+      update.createdAt,
+      JSON.stringify(update),
+    );
+    res.status(201).json({ update: expandUpdate(update) });
+  });
+  app.patch('/api/updates/:id', auth(), (req, res) => {
+    const existing = parse(
+      db
+        .prepare('SELECT data FROM updates WHERE id=? AND author_id=?')
+        .get(req.params.id, req.user.id),
+    );
+    if (!existing) return res.status(404).json({ error: 'Update not found.' });
+    const update = {
+      ...existing,
+      ...updateSchema.parse(req.body),
+      updatedAt: new Date().toISOString(),
+    };
+    db.prepare('UPDATE updates SET data=? WHERE id=?').run(JSON.stringify(update), update.id);
+    res.json({ update: expandUpdate(update) });
+  });
+  app.delete('/api/updates/:id', auth(), (req, res) => {
+    const result = db
+      .prepare('DELETE FROM updates WHERE id=? AND author_id=?')
+      .run(req.params.id, req.user.id);
+    if (!result.changes) return res.status(404).json({ error: 'Update not found.' });
+    res.json({ ok: true });
+  });
+  app.get('/api/connections/:id/messages', auth(), (req, res) => {
+    if (!participantConnection(req, res)) return;
+    const messages = db
+      .prepare(
+        'SELECT data FROM messages WHERE connection_id=? ORDER BY created_at DESC, rowid DESC LIMIT 100',
+      )
+      .all(req.params.id)
+      .map(parse)
+      .reverse();
+    res.json({ messages });
+  });
+  app.post('/api/connections/:id/messages', auth(), (req, res) => {
+    if (!participantConnection(req, res)) return;
+    const message = {
+      id: uid(),
+      connectionId: req.params.id,
+      senderId: req.user.id,
+      ...messageSchema.parse(req.body),
+      createdAt: new Date().toISOString(),
+    };
+    db.prepare('INSERT INTO messages VALUES (?,?,?,?,?)').run(
+      message.id,
+      message.connectionId,
+      message.senderId,
+      message.createdAt,
+      JSON.stringify(message),
+    );
+    res.status(201).json({ message });
+  });
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.get('/api/session', (req, res) =>
@@ -232,7 +342,7 @@ export function createApp(options = {}) {
     res.clearCookie('again_session', { path: '/' });
     res.json({ ok: true });
   });
-  app.put('/api/profile', auth('candidate'), (req, res) => {
+  app.put('/api/profile', auth(), (req, res) => {
     const input = profileSchema.parse(req.body);
     const user = { ...req.user, ...input, updatedAt: new Date().toISOString() };
     db.prepare('UPDATE users SET data=? WHERE id=?').run(JSON.stringify(user), user.id);
@@ -248,9 +358,8 @@ export function createApp(options = {}) {
         return {
           ...stripPrivate(c),
           recruiter: {
-            name: recruiter.name,
-            company: recruiter.company,
-            headline: recruiter.headline,
+            ...publicPerson(recruiter),
+            email: recruiter.email,
           },
           event: eventFor(c.eventId),
         };
@@ -300,8 +409,6 @@ export function createApp(options = {}) {
           originalConversation: input.conversation,
           createdAt: now,
           updatedAt: now,
-          remembered: false,
-          saved: false,
         };
     if (existing)
       db.prepare('UPDATE connections SET data=? WHERE id=?').run(
@@ -318,19 +425,17 @@ export function createApp(options = {}) {
       );
     res.status(existing ? 200 : 201).json({ connection: stripPrivate(connection) });
   });
-  app.delete('/api/connections/:id', auth('candidate'), (req, res) => {
+  app.delete('/api/connections/:id', auth(), (req, res) => {
     const result = db
-      .prepare('DELETE FROM connections WHERE id=? AND candidate_id=?')
-      .run(req.params.id, req.user.id);
+      .prepare('DELETE FROM connections WHERE id=? AND (candidate_id=? OR recruiter_id=?)')
+      .run(req.params.id, req.user.id, req.user.id);
     if (!result.changes) return res.status(404).json({ error: 'Connection not found.' });
     res.json({ ok: true });
   });
   app.post('/api/materials/note', auth('candidate'), (req, res) => {
     if (materialsFor(req.user.id).length >= 20)
       return res.status(400).json({ error: 'You can share up to 20 materials.' });
-    const input = z
-      .object({ title: short, text: z.string().trim().min(20).max(30000) })
-      .parse(req.body);
+    const input = noteSchema.parse(req.body);
     const material = {
       id: uid(),
       candidateId: req.user.id,
@@ -411,6 +516,25 @@ export function createApp(options = {}) {
     if (!owner && !connected) return res.status(404).json({ error: 'File not found.' });
     res.download(material.path, material.title);
   });
+  app.patch('/api/materials/:id', auth('candidate'), (req, res) => {
+    const existing = parse(
+      db
+        .prepare('SELECT data FROM materials WHERE id=? AND candidate_id=?')
+        .get(req.params.id, req.user.id),
+    );
+    if (!existing) return res.status(404).json({ error: 'Material not found.' });
+    if (existing.type !== 'note')
+      return res
+        .status(400)
+        .json({ error: 'Only notes can be edited. Upload a new file to replace a document.' });
+    const material = {
+      ...existing,
+      ...noteSchema.parse(req.body),
+      updatedAt: new Date().toISOString(),
+    };
+    db.prepare('UPDATE materials SET data=? WHERE id=?').run(JSON.stringify(material), material.id);
+    res.json({ material: safeMaterial(material) });
+  });
   app.delete('/api/materials/:id', auth('candidate'), (req, res) => {
     const material = parse(
       db
@@ -436,57 +560,6 @@ export function createApp(options = {}) {
       roles: db.prepare('SELECT data FROM roles WHERE recruiter_id=?').all(req.user.id).map(parse),
     });
   });
-  app.patch('/api/workspace/connections/:id', auth('recruiter'), (req, res) => {
-    const connection = ownedConnection(req, res);
-    if (!connection) return;
-    const changes = workflowChanges.parse(req.body);
-    if (
-      changes.roleId &&
-      !db
-        .prepare('SELECT id FROM roles WHERE id=? AND recruiter_id=?')
-        .get(changes.roleId, req.user.id)
-    )
-      return res.status(404).json({ error: 'Role not found.' });
-    const updated = applyWorkflow(connection, changes);
-    db.prepare('UPDATE connections SET data=? WHERE id=?').run(
-      JSON.stringify(updated),
-      connection.id,
-    );
-    res.json({ connection: expand(updated) });
-  });
-  app.patch('/api/workspace/connections', auth('recruiter'), (req, res) => {
-    const { ids, changes } = z
-      .object({ ids: z.array(z.string()).min(1).max(500), changes: workflowChanges })
-      .parse(req.body);
-    const unique = [...new Set(ids)];
-    const connections = unique.map((id) =>
-      parse(
-        db
-          .prepare('SELECT data FROM connections WHERE id=? AND recruiter_id=?')
-          .get(id, req.user.id),
-      ),
-    );
-    if (connections.some((c) => !c))
-      return res.status(404).json({ error: 'Connection not found.' });
-    if (
-      changes.roleId &&
-      !db
-        .prepare('SELECT id FROM roles WHERE id=? AND recruiter_id=?')
-        .get(changes.roleId, req.user.id)
-    )
-      return res.status(404).json({ error: 'Role not found.' });
-    const updated = connections.map((c) => applyWorkflow(c, changes));
-    db.exec('BEGIN');
-    try {
-      for (const c of updated)
-        db.prepare('UPDATE connections SET data=? WHERE id=?').run(JSON.stringify(c), c.id);
-      db.exec('COMMIT');
-    } catch (e) {
-      db.exec('ROLLBACK');
-      throw e;
-    }
-    res.json({ connections: updated.map(expand) });
-  });
   app.post('/api/workspace/export', auth('recruiter'), (req, res) => {
     const { ids } = z.object({ ids: z.array(z.string()).min(1).max(500) }).parse(req.body);
     const connections = [...new Set(ids)].map((id) =>
@@ -500,7 +573,7 @@ export function createApp(options = {}) {
       return res.status(404).json({ error: 'Connection not found.' });
     res
       .type('text/csv')
-      .set('Content-Disposition', 'attachment; filename="again-hr-connections.csv"')
+      .set('Content-Disposition', 'attachment; filename="staylinked-connections.csv"')
       .send(connectionsCsv(connections.map(expand)));
   });
   app.post('/api/workspace/connections/:id/brief', auth('recruiter'), async (req, res) => {

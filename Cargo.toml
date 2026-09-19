@@ -1,5 +1,5 @@
 [package]
-name = "again-evidence"
+name = "staylinked-evidence"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -9,7 +9,7 @@ publish = false
 path = "rust/src/lib.rs"
 
 [[bin]]
-name = "again-evidence"
+name = "staylinked-evidence"
 path = "rust/src/main.rs"
 
 [dependencies]
