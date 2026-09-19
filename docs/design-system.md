@@ -45,3 +45,5 @@ Use nouns, values, statuses, dates, and actions. Explain only an error, a conseq
 ## Avatars
 
 Local SVG portraits use [Notionists by Zoish via DiceBear](https://www.dicebear.com/styles/notionists/), licensed CC0 1.0. `npm run avatars:generate` rebuilds the 32 static illustrations. Names choose a stable placeholder; these are decorative illustrations, not user-uploaded photos or identity signals. The generator is a development dependency and no external image service receives names.
+
+Company identities use a local SVG mark beside the name. Helix Bio is fictional and has a custom helix mark; other companies receive a neutral workspace mark. The same component appears in the recruiter sidebar, QR sheet, candidate connections, and event portal. Company logo upload and remote brand lookup are outside this prototype.

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, ExternalLink } from 'lucide-react';
 import { api, json } from './api';
-import { Choice, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
+import { useAuth } from './session';
+import { Choice, CompanyAvatar, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,6 +17,7 @@ export function ShareQR({
   initialEvent?: string;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
   const [eventId, setEventId] = useState(initialEvent || events[0]?.id || '');
   const [qr, setQr] = useState<{ image: string; url: string; localOnly: boolean } | null>(null);
   const [error, setError] = useState('');
@@ -49,6 +51,10 @@ export function ShareQR({
       {qr ? (
         <>
           <div className="qr-display">
+            <div className="qr-company">
+              <CompanyAvatar name={user?.company} small />
+              <span>{user?.company || 'My workspace'}</span>
+            </div>
             <img
               src={qr.image}
               alt={`QR code for ${events.find((e) => e.id === eventId)?.name}`}

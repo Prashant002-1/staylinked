@@ -19,7 +19,17 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { api, date, json } from './api';
 import { useAuth } from './session';
-import { Avatar, Brand, Empty, ErrorMessage, Field, Loading, Modal, SubmitButton } from './ui';
+import {
+  Avatar,
+  Brand,
+  CompanyAvatar,
+  Empty,
+  ErrorMessage,
+  Field,
+  Loading,
+  Modal,
+  SubmitButton,
+} from './ui';
 import { MaterialPreview } from './ConnectionPanel';
 import type { User, Material, Connection } from './types';
 function ProfileForm({ profile, saved }: { profile: User; saved: (user: User) => void }) {
@@ -388,9 +398,14 @@ export default function Candidate() {
                   <Avatar name={c.recruiter!.name} />
                   <div className="flex-1">
                     <h3>{c.recruiter?.name}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {c.recruiter?.company} · {c.recruiter?.headline || 'Recruiter'}
-                    </p>
+                    <div className="connection-company">
+                      <CompanyAvatar name={c.recruiter?.company} small />
+                      <span>
+                        {c.recruiter?.company || 'Independent'}
+                        <span className="mx-1.5">·</span>
+                        {c.recruiter?.headline || 'Recruiter'}
+                      </span>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"

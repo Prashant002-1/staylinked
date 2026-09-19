@@ -29,6 +29,18 @@ const avatarUrl = (name: string) => {
   for (const character of name) hash = Math.imul(hash ^ character.codePointAt(0)!, 16777619) >>> 0;
   return `/avatars/person-${hash % 32}.svg`;
 };
+export function CompanyAvatar({ name = '', small = false }: { name?: string; small?: boolean }) {
+  const source = name.toLowerCase().includes('helix') ? 'helix-bio' : 'workspace';
+  return (
+    <img
+      src={`/companies/${source}.svg`}
+      alt=""
+      className={cn('company-logo', small && 'company-logo-small')}
+      width={small ? 20 : 34}
+      height={small ? 20 : 34}
+    />
+  );
+}
 export function Avatar({
   name,
   size = 'normal',

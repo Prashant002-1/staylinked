@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { api, date, json } from './api';
 import { useAuth } from './session';
 import { AuthForm } from './Entry';
-import { Avatar, Brand, ErrorMessage, Field, Loading, SubmitButton } from './ui';
+import { Avatar, Brand, CompanyAvatar, ErrorMessage, Field, Loading, SubmitButton } from './ui';
 import type { Connection, Event, User } from './types';
 export default function Connect() {
   const { eventId } = useParams();
@@ -82,9 +82,11 @@ export default function Connect() {
             <div className="portal-person">
               <Avatar name={portal.recruiter.name} size="large" />
               <h1>{portal.recruiter.name}</h1>
-              <p>
-                {portal.recruiter.headline || 'Recruiter'} · {portal.recruiter.company}
-              </p>
+              <p>{portal.recruiter.headline || 'Recruiter'}</p>
+              <div className="portal-company">
+                <CompanyAvatar name={portal.recruiter.company} small />
+                <span>{portal.recruiter.company || 'Independent'}</span>
+              </div>
               <span>
                 <CalendarDays className="size-3.5" />
                 {portal.event.name} · {date(portal.event.date)}

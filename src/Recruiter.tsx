@@ -49,7 +49,17 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { api, date, json } from './api';
 import { useAuth } from './session';
-import { Avatar, Brand, Choice, Empty, ErrorMessage, Loading, Status, stages } from './ui';
+import {
+  Avatar,
+  Brand,
+  CompanyAvatar,
+  Choice,
+  Empty,
+  ErrorMessage,
+  Loading,
+  Status,
+  stages,
+} from './ui';
 import { NewEvent, NewRole, ShareQR } from './RecruiterModals';
 import ConnectionPanel, { type WorkflowChange } from './ConnectionPanel';
 import Integrations from './Integrations';
@@ -232,7 +242,7 @@ export default function Recruiter() {
           </Button>
         </div>
         <div className="workspace-identity">
-          <span className="company-avatar">{auth.user?.company?.[0] || 'W'}</span>
+          <CompanyAvatar name={auth.user?.company} />
           <div>
             <strong>{auth.user?.company || 'My workspace'}</strong>
             <span>Recruiting workspace</span>
