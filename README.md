@@ -4,6 +4,10 @@ Meeting someone gives a recruiter context that a resume alone does not carry. A 
 
 This is a full-stack web project built with React, TypeScript, Node.js, SQLite, and a small Rust passage matcher. A recruiter shares an event QR; the candidate writes the meeting note and shares their work. Both can revisit the relationship. A recruiter can also look at that work against a role, with quotations that open at their source. Contact stays with email, LinkedIn, and personal websites.
 
+[![Watch the Staylinked product introduction](docs/media/staylinked-intro-poster.jpg)](docs/media/staylinked-intro.mp4)
+
+[Watch the 40-second introduction](docs/media/staylinked-intro.mp4). A silent, 1080p video follows one meeting from its event QR to the candidate's note, current work, and source quotations. It uses the actual interface with fictional profiles.
+
 ## Interface
 
 The candidate keeps a specific memory of each meeting: the question someone asked, the work they discussed, and what they offered to share next. Repeat meetings belong to the same person. A separate meeting control changes the note while keeping the person's profile in place; the selected encounter survives a refresh.
