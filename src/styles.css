@@ -369,6 +369,9 @@
   font-weight: 550;
   letter-spacing: -0.85px;
 }
+.app-main h1[tabindex='-1']:focus {
+  outline: none;
+}
 .profile-heading-copy > p {
   color: var(--muted-foreground);
   font-size: 14px;
@@ -398,8 +401,7 @@
   margin-top: 34px;
 }
 .profile-section h2,
-.section-title,
-.encounter-content h2 {
+.section-title {
   font-size: 16px;
   font-weight: 550;
   letter-spacing: -0.2px;
@@ -416,10 +418,75 @@
   color: var(--primary);
   padding-right: 0;
 }
-.encounter-date {
+.encounter-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.encounter-identity {
+  min-width: 0;
+}
+.encounter-label {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.encounter-content h2 {
+  font-size: 17px;
+  font-weight: 550;
+  letter-spacing: -0.25px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.encounter-place {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  row-gap: 2px;
   font-size: 13px;
   color: var(--muted-foreground);
-  margin-top: 4px;
+  line-height: 1.65;
+  margin-top: 6px;
+}
+.meeting-switcher[data-slot='button'] {
+  color: var(--muted-foreground);
+  margin-top: -8px;
+}
+.meeting-switcher[data-slot='button']:hover,
+.meeting-switcher[data-slot='button'][aria-expanded='true'] {
+  color: var(--foreground);
+}
+.meeting-menu[data-slot='dropdown-menu-content'] {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+}
+.meeting-menu [data-slot='dropdown-menu-label'] {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.meeting-option[data-slot='dropdown-menu-radio-item'] {
+  padding: 12px 32px 12px 10px;
+  align-items: flex-start;
+}
+.meeting-option > span:last-child {
+  display: block;
+  min-width: 0;
+}
+.meeting-option strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.meeting-option > span:last-child > span {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 3px;
 }
 .encounter-content h3 {
   font-size: 19px;
@@ -436,9 +503,16 @@
   overflow-wrap: anywhere;
 }
 .encounter-byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
   color: var(--muted-foreground);
   font-size: 12px;
   margin-top: 14px;
+}
+.encounter-byline [data-slot='button'] {
+  color: var(--primary);
 }
 .profile-bio {
   margin-top: 10px;

@@ -49,6 +49,8 @@ export default function Circle() {
   const recruiter = user?.kind === 'recruiter';
   const ownProfile = params.get('view') === 'profile';
   const personId = params.get('person');
+  const person = data?.connections.find((connection) => connection.id === personId);
+  const personKey = person ? (recruiter ? person.candidateId : person.recruiterId) : personId;
   const requestVersion = useRef(0);
   const refreshRequest = useRef<AbortController | null>(null);
   const previousPerson = useRef(personId);
@@ -74,11 +76,18 @@ export default function Circle() {
           returnFocus.current === 'account'
             ? account.current
             : rows.current.get(returnFocus.current);
-        target?.focus({ preventScroll: true });
+        if (target) target.focus({ preventScroll: true });
+        else {
+          heading?.setAttribute('tabindex', '-1');
+          heading?.focus({ preventScroll: true });
+        }
+      } else {
+        heading?.setAttribute('tabindex', '-1');
+        heading?.focus({ preventScroll: true });
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [ownProfile, personId, Boolean(data)]);
+  }, [ownProfile, personKey, Boolean(data)]);
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
     refreshRequest.current?.abort();
@@ -121,7 +130,6 @@ export default function Circle() {
   }, [personId, ownProfile, refresh]);
   if (!user) return null;
   const home = () => setParams({});
-  const person = data?.connections.find((c) => c.id === personId);
   const selectedEvent = data?.events.find((event) => event.id === eventFilter);
   const visibleConnections = (data?.connections || []).filter(
     (connection) => !selectedEvent || connection.eventId === selectedEvent.id,
@@ -228,13 +236,14 @@ export default function Circle() {
           personId &&
           (person ? (
             <ConnectionPanel
-              key={`${user.id}:${person.id}`}
+              key={`${user.id}:${personKey}`}
               connection={person}
               connections={data.connections}
               user={user}
               roles={data.roles}
               roleId={roleId || data.roles[0]?.id || ''}
               onRoleChange={setRoleId}
+              onEncounterChange={(id) => setParams({ person: id }, { replace: true })}
               roleOpen={roleOpen}
               onRoleOpenChange={setRoleOpen}
               onClose={home}
@@ -337,7 +346,7 @@ export default function Circle() {
                       <h2>{p.name}</h2>
                       <p>{p.headline}</p>
                       <span>
-                        {c.event.name} · {date(c.createdAt)}
+                        {c.event.name} · {date(c.event.date || c.createdAt)}
                       </span>
                     </div>
                     <p className="connection-memory">{c.highlight}</p>

@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
@@ -543,8 +543,15 @@ export function createApp(options = {}) {
         .get(req.params.id, req.user.id),
     );
     if (!material) return res.status(404).json({ error: 'Material not found.' });
-    if (material.path && existsSync(material.path)) unlinkSync(material.path);
     db.prepare('DELETE FROM materials WHERE id=?').run(material.id);
+    if (material.path) {
+      try {
+        unlinkSync(material.path);
+      } catch (error) {
+        // Access is already revoked. Failed cleanup must not report the deletion as unsaved.
+        if (error.code !== 'ENOENT') console.error('Deleted upload cleanup failed:', error.code);
+      }
+    }
     res.json({ ok: true });
   });
   app.get('/api/workspace', auth('recruiter'), (req, res) => {
@@ -606,13 +613,11 @@ export function createApp(options = {}) {
       return res
         .status(409)
         .json({ error: 'This role changed. Please try again.', code: 'ROLE_CHANGED' });
-    const currentSources = sourcesFor(
-      getUser(current.candidateId),
-      current,
-      materialsFor(current.candidateId),
-    );
+    const currentProfile = getUser(current.candidateId);
+    const currentSources = sourcesFor(currentProfile, current, materialsFor(current.candidateId));
     if (
       current.updatedAt !== connection.updatedAt ||
+      JSON.stringify(currentProfile) !== JSON.stringify(profile) ||
       JSON.stringify(currentSources) !== JSON.stringify(sources)
     )
       return res.status(409).json({

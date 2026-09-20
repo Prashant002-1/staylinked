@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
   ChevronRight,
@@ -25,6 +24,7 @@ import { api, date, json } from './api';
 import { Avatar, Choice, ErrorMessage, Loading, Modal } from './ui';
 import { MaterialPreview } from './Profile';
 import { ContactLinks } from './ContactLinks';
+import { EncounterNote } from './EncounterNote';
 import type { Brief, Connection, Role, Source, User } from './types';
 
 export default function ConnectionPanel({
@@ -36,6 +36,7 @@ export default function ConnectionPanel({
   roleOpen,
   onRoleOpenChange,
   onRoleChange,
+  onEncounterChange,
   onClose,
   onChange,
   onNewRole,
@@ -49,6 +50,7 @@ export default function ConnectionPanel({
   roleOpen: boolean;
   onRoleOpenChange: (open: boolean) => void;
   onRoleChange: (id: string) => void;
+  onEncounterChange: (id: string) => void;
   onClose: () => void;
   onChange: () => void;
   onNewRole: () => void;
@@ -59,8 +61,7 @@ export default function ConnectionPanel({
   const encounters = connections
     .filter((other) => other.candidateId === c.candidateId && other.recruiterId === c.recruiterId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const [encounterId, setEncounterId] = useState(c.id);
-  const current = encounters.find((e) => e.id === encounterId) || c;
+  const current = c;
   const [materialId, setMaterialId] = useState<string | null>(null);
   const material = materialId ? c.materials?.find((item) => item.id === materialId) : undefined;
   useEffect(() => {
@@ -125,51 +126,12 @@ export default function ConnectionPanel({
       </header>
       <div className={`person-reading-layout ${roleOpen ? 'with-role' : ''}`}>
         <div className="profile-content">
-          <section className="encounter-content">
-            <div className="section-topline">
-              <h2>{encounters.length > 1 ? 'Where we met' : `Met at ${current.event.name}`}</h2>
-              {!recruiter && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  render={<Link to={`/connect/${current.eventId}`} />}
-                  nativeButton={false}
-                >
-                  <Pencil />
-                  Edit
-                </Button>
-              )}
-            </div>
-            {encounters.length > 1 && (
-              <Choice
-                label="Meeting"
-                value={current.id}
-                options={encounters.map((e) => ({
-                  value: e.id,
-                  label: `${e.event.name} · ${date(e.createdAt)}`,
-                }))}
-                onChange={setEncounterId}
-                className="mb-5"
-              />
-            )}
-            <div className="encounter-date">
-              {date(current.createdAt)} · {current.event.location}
-            </div>
-            <h3>{current.highlight}</h3>
-            <p>{current.conversation}</p>
-            <div className="encounter-byline">
-              {recruiter ? `Shared by ${person.name.split(' ')[0]}` : 'Your note'}
-              {current.updatedAt !== current.createdAt
-                ? ` · edited ${date(current.updatedAt)}`
-                : ''}
-            </div>
-            {current.originalConversation !== current.conversation && (
-              <details className="original-note">
-                <summary>Original note</summary>
-                <p>{current.originalConversation}</p>
-              </details>
-            )}
-          </section>
+          <EncounterNote
+            current={current}
+            encounters={encounters}
+            recruiter={recruiter}
+            onChange={onEncounterChange}
+          />
           {person.bio && (
             <section className="profile-section">
               <h2>About</h2>

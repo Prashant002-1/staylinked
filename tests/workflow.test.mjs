@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync,
+  mkdirSync,
   rmSync,
   readdirSync,
   unlinkSync,
@@ -1169,6 +1170,138 @@ test('file persistence failures leave no orphan upload and missing files return4
     200,
   );
 });
+
+test('file deletion preserves bytes on database failure and revokes access before cleanup', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const candidate = f.client(),
+    recruiter = f.client();
+  await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+  await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+  const text = 'This private document must survive an unsuccessful deletion.';
+  const upload = () => candidate('/materials/upload', { method: 'POST', body: uploadBody(text) });
+  const uploaded = await upload();
+  assert.equal(uploaded.status, 201);
+  const id = uploaded.data.material.id;
+  const stored = f.db.prepare('SELECT data FROM materials WHERE id=?').get(id).data;
+  const path = JSON.parse(stored).path;
+  f.db.exec(
+    "CREATE TRIGGER reject_file_delete BEFORE DELETE ON materials BEGIN SELECT RAISE(FAIL, 'Private forced deletion failure'); END;",
+  );
+  try {
+    const failed = await candidate(`/materials/${id}`, { method: 'DELETE' });
+    assert.equal(failed.status, 500);
+    assert.doesNotMatch(failed.data.error, /Private forced deletion failure/);
+    assert.equal(f.db.prepare('SELECT data FROM materials WHERE id=?').get(id).data, stored);
+    assert.equal(readFileSync(path, 'utf8'), text);
+    assert.equal((await candidate(`/materials/${id}/download`)).data, text);
+    assert.equal((await recruiter(`/materials/${id}/download`)).data, text);
+  } finally {
+    f.db.exec('DROP TRIGGER reject_file_delete');
+  }
+  assert.equal((await candidate(`/materials/${id}`, { method: 'DELETE' })).status, 200);
+  assert.equal(f.db.prepare('SELECT id FROM materials WHERE id=?').get(id), undefined);
+  assert.equal(existsSync(path), false);
+  assert.equal((await candidate(`/materials/${id}/download`)).status, 404);
+  assert.equal((await recruiter(`/materials/${id}/download`)).status, 404);
+
+  const cleanup = await upload();
+  const cleanupId = cleanup.data.material.id;
+  const cleanupPath = JSON.parse(
+    f.db.prepare('SELECT data FROM materials WHERE id=?').get(cleanupId).data,
+  ).path;
+  // A directory at the saved path deterministically makes unlink fail on every platform.
+  renameSync(cleanupPath, `${cleanupPath}.held`);
+  mkdirSync(cleanupPath);
+  assert.equal((await candidate(`/materials/${cleanupId}`, { method: 'DELETE' })).status, 200);
+  assert.equal(f.db.prepare('SELECT id FROM materials WHERE id=?').get(cleanupId), undefined);
+  assert.ok(existsSync(cleanupPath));
+  assert.equal((await candidate(`/materials/${cleanupId}/download`)).status, 404);
+  assert.equal((await recruiter(`/materials/${cleanupId}/download`)).status, 404);
+});
+
+test(
+  'a profile-only change rejects a pending role lookup and a fresh lookup uses the new name',
+  { timeout: 10000 },
+  async (t) => {
+    let started,
+      release,
+      calls = 0;
+    const providerStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    const finish = new Promise((resolve) => {
+      release = resolve;
+    });
+    const names = [];
+    const f = await fixture({
+      aiConfig: {
+        apiKey: 'test-only-key',
+        baseUrl: 'https://provider.example/v1',
+        model: 'test-model',
+      },
+      fetchImpl: async (_url, options) => {
+        const { candidate, role } = JSON.parse(JSON.parse(options.body).messages[1].content);
+        names.push(candidate);
+        if (++calls === 1) {
+          started();
+          await finish;
+        }
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summary: `${candidate} described a project in this conversation.`,
+                  findings: role.requirements.map((requirement) => ({
+                    requirement,
+                    sourceId: null,
+                    quote: null,
+                    note: 'No passage selected.',
+                  })),
+                }),
+              },
+            },
+          ],
+        });
+      },
+    });
+    t.after(() => {
+      release();
+      return f.cleanup();
+    });
+    const candidate = f.client(),
+      recruiter = f.client();
+    await candidate('/auth/demo', { method: 'POST', body: { kind: 'candidate' } });
+    await recruiter('/auth/demo', { method: 'POST', body: { kind: 'recruiter' } });
+    const before = (await candidate('/candidate')).data.profile;
+    const lookup = () =>
+      recruiter('/workspace/connections/connection-aisha-demo/brief', {
+        method: 'POST',
+        body: { roleId: 'product-engineer' },
+      });
+    const pending = lookup();
+    await providerStarted;
+    const edited = await candidate('/profile', {
+      method: 'PUT',
+      body: { ...before, name: 'Aisha Patel Singh' },
+    });
+    assert.equal(edited.status, 200);
+    assert.equal(edited.data.user.bio, before.bio);
+    release();
+    const stale = await pending;
+    assert.equal(stale.status, 409);
+    assert.equal(stale.data.code, 'SOURCES_CHANGED');
+    assert.equal(stale.data.brief, undefined);
+    assert.equal(stale.data.sources, undefined);
+    const fresh = await lookup();
+    assert.equal(fresh.status, 200);
+    assert.deepEqual(names, [before.name, edited.data.user.name]);
+    assert.ok(fresh.data.brief.summary.startsWith(edited.data.user.name));
+    assert.equal((await lookup()).data.brief.cached, true);
+    assert.equal(calls, 2);
+  },
+);
 
 test('model excerpt budgets never cut Unicode characters', () => {
   const sources = [

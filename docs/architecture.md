@@ -1,57 +1,66 @@
 # Architecture
 
-## Application and records
+Staylinked is one React client and one Express process, backed by SQLite and local files. Node owns authentication, authorization, extraction, and persistence. A short-lived Rust executable finds source passages; an optional model request organizes those passages for a selected role.
 
-React calls a same-origin Express API. Node handles cookie sessions, scrypt password hashes, SQLite, private files, PDF extraction, QR creation, and optional model requests.
+```mermaid
+flowchart LR
+    Browser[React browser] <-->|Same-origin JSON and file requests| API[Express API]
+    API <-->|Records, sessions, validated brief cache| DB[(SQLite)]
+    API <-->|Authorized upload and download| Files[Private upload directory]
+    API <-->|Bounded JSON over stdin and stdout| Rust[Rust passage lookup]
+    API <-->|Optional HTTPS with bounded excerpts| Model[OpenCode Go / GLM-5.3]
+```
 
-The JSON client applies a 30-second deadline through response-body reading. A caller's earlier cancellation still takes priority; QR reads use 12 seconds. Timers and abort listeners are released after completion. Requests are not retried automatically. If a mutation times out or its response cannot be read, the interface explains that it may have saved and asks the user to refresh before retrying.
+[Server entry](../server/index.mjs) serves the built client in production and uses Vite middleware during development. The browser never receives provider credentials or direct filesystem paths.
 
-SQLite stores JSON records alongside indexed ownership columns: users, recruiter-owned events and roles, candidate-owned materials, candidate/event connections, and a cache of validated role summaries. A connection retains the original and current recap, memorable detail, interest, and timestamps. This storage model keeps iteration small; pagination and more structured querying remain future work.
+## Records and access
 
-Both account types can edit their own profile. Candidates can edit note titles and text or replace an uploaded document in place. Replacement preserves the material ID and original creation date, records an updated date, and changes the inputs used for role context. Validation, extraction, and persistence failures leave the previous document intact; overlapping changes are rejected before saving. The obsolete file is removed only after its replacement is stored. Files live outside the public static directory, with authorization checked on each download.
+The [SQLite schema](../server/db.mjs#L18) combines JSON records with ownership columns, foreign keys, and connection/material indexes. Recruiters own events and roles; candidates own materials; both edit their own profiles. A unique candidate/event pair identifies an encounter. Its current recap can change while `originalConversation` preserves the first submission.
 
-## Access
+The [portal](../server/app.mjs#L335) exposes event metadata and a limited recruiter introduction, plus the signed-in candidate's existing recap when present. Private account routes return connected profiles. A recruiter can read a candidate's files only while a connection grants access. [Removing one encounter](../server/app.mjs#L390) leaves profiles and work intact; another encounter between the same people can retain access. There is no public profile directory.
 
-Authenticated connection routes expose a person's shared profile and, to a connected recruiter, the candidate's materials. The event portal exposes only its public event metadata and a limited recruiter introduction. There is no public profile directory.
+[CSV export](../server/app.mjs#L571) checks ownership of every selected connection. Its [serializer](../server/workflow.mjs) quotes cells and prefixes formula-like values. This is a manual export, not an ATS integration. Contact links open supplied email or web destinations; the server sends no outreach.
 
-Either participant can remove a connection. Access remains only if another connection between those people still grants it. Removing a connection does not delete the other person's profile or work. Contact actions use existing email and web links; the server does not send outreach.
+## Requests and changing data
 
-The client includes its current account ID in API requests. If another tab has changed the shared session cookie, the server rejects the mismatched request before reading or writing private records. Focus and visibility refreshes reconcile the session, and responses from an earlier account are discarded. This consistency check supplements session authentication.
+Sessions use hashed tokens in SQLite and HTTP-only cookies; passwords use salted scrypt. The [server identity guard](../server/app.mjs#L166) compares `X-Staylinked-User` with the authenticated account. It prevents a form rendered for one account from reading or mutating another after a shared browser cookie changes. The header supplements authentication; it does not grant access.
 
-CSV export validates ownership of selected connections, escapes cells, and prefixes spreadsheet formula-like values. Import mapping is the receiving system's responsibility. Shared demo accounts are unsuitable for private personal information.
+The [client request helper](../src/api.ts#L25) rejects responses when its known account changes, including during body reading. [Session refresh](../src/auth.tsx#L18) runs on focus and visibility changes; [route keys](../src/App.tsx#L14) reset private component state across accounts and invitations.
 
-## QR reader
+JSON and Blob reads share a 30-second deadline. Earlier caller cancellation takes priority. There are no automatic retries: a timed-out or unreadable mutation response may follow a successful write, so the error asks the user to refresh before retrying. Cancelling a client request does not roll back a server write. [Downloads](../src/downloads.ts#L7) use this same helper, report errors inside the app, and release temporary object URLs.
 
-The browser decodes camera frames or a selected image with `jsQR`. Camera access starts only after **Use camera** is selected and requires a secure browser context. Image selection remains available when a camera cannot be used. Media tracks, animation frames, pending lookups, and temporary image URLs are released when scanning stops or the dialog closes. Finding a code stops capture before looking up the invitation. Lookup reads time out after 12 seconds and can be retried.
+After an awaited role lookup, the [API rechecks](../server/app.mjs#L606) connection access, role, recap version, full profile, and sources. Removed access or changed inputs, including [name-only edits](../tests/workflow.test.mjs#L1223), prevent the stale response from returning private passages.
 
-The decoder accepts an invitation-shaped `/connect/:id` path, extracts only the event ID, and requests the current application's portal endpoint. It never fetches or navigates to the host encoded in the QR. A valid local event is shown for review; **Continue** opens its local connection route. Physical-camera behavior has not been tested.
+## Material lifecycle
 
-## Rust passage lookup
+Candidates can keep up to 20 materials. Uploads accept one PDF, TXT, or Markdown file, up to 8 MiB. [Extraction](../server/app.mjs#L65) reads the first 30 PDF pages and retains up to 60,000 text code units. A PDF without extractable text remains downloadable; OCR is not implemented.
 
-`rust/src/lib.rs` defines typed `Request`, `Source`, `Finding`, and `Response` structures. Serde handles JSON. Validation returns a `Result`; the CLI reports invalid input on stderr and exits unsuccessfully.
+[Replacement](../server/app.mjs#L476) preserves the material ID and creation date. It extracts first, then compares the current stored row with the one read before extraction, rejecting concurrent replacement or deletion. Validation or PDF parsing failure leaves the old document intact.
 
-1. Accept 1–12 requirements and at most 22 sources. Requirements are capped at 200 characters, source text at 18,000 characters, and total stdin at 2 MB.
-2. Split source text into borrowed sentence or line slices, preserving quotations.
-3. Tokenize whole words, remove a fixed stop list, and normalize a short explicit list of word forms, including APIs to API and Golang to Go. Ordinary tokens are case folded. The short technical tokens `C`, `R`, `C#`, `ML`, `UI`, `UX`, and `AI` require their canonical capitalization; `C`, `C#`, and `C++` remain separate tokens.
-4. Count matching whole words. Prefer greater coverage, then a passage of at least nine words. Work precedes the profile and recap in equal conditions; remaining ties preserve source order.
-5. Return the requirement, source ID, quotation, and matching terms. An unmatched requirement has null source and quote.
+[Persistence](../server/app.mjs#L419) writes a new uniquely named file before updating SQLite. A failed database write triggers cleanup of that new file; the old file is removed only after the update succeeds. This handles ordinary failures, but the filesystem and database do not share a crash-atomic transaction. Files default to `data/uploads`, outside the static client directory. Every [download](../server/app.mjs#L502) checks ownership or a current recruiter connection.
 
-Node invokes `staylinked-evidence` with `execFile`, no shell, a three-second timeout, and a one-megabyte output buffer. It validates source IDs, exact quotations, and requirement order again at the process boundary. Inputs are the candidate's recap, profile, and work.
+[Deletion](../server/app.mjs#L539) commits the database removal before unlinking. [Failure tests](../tests/workflow.test.mjs#L1174) verify that failed database writes preserve the file; failed cleanup leaves private bytes unreachable through the API.
 
-Before returning a pending role lookup, the server rechecks the connection and current sources. A removed connection or changed source set invalidates that response.
+## Why a small Rust lookup
 
-A requirement may name `Go` directly. A source must use `Go` with adjacent coding wording, such as “Go API”, “Go services”, or “in Go”; lowercase everyday “go” and “Go to…” do not match the language. `Golang` is an explicit alias. These conservative rules can miss lowercase acronyms or a standalone Go skill-list entry. The optional model excerpt selector uses the same vocabulary. This is a small literal vocabulary, not language understanding.
+A lookup concerns one person's recap, bio, and at most 20 materials, not a large searchable corpus. [Source assembly](../server/briefs.mjs#L55) provides the current text on demand. A persistent index would add synchronization and operational work without being necessary for this bounded task.
 
-The executable has no database, network client, or index. Starting a process adds overhead, so this boundary does not imply a speed improvement. A sentence such as “I have no Kubernetes experience” can match Kubernetes; the reader must interpret the passage. Literal matching does not establish qualifications.
+The [Rust library](../rust/src/lib.rs#L124) accepts 1–12 requirements and at most 22 sources, with 200 characters per requirement and 18,000 per source. It borrows sentence/line slices, tokenizes whole words, removes stop words, and applies a small explicit vocabulary. Greater term coverage wins, then passages of at least nine words; work wins remaining ties against recap/bio, followed by stable source order. Unmatched requirements return null source and quotation.
 
-References: [Rust error handling](https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html), [test organization](https://doc.rust-lang.org/book/ch11-03-test-organization.html), and [Serde derives](https://serde.rs/derive.html).
+Canonical short technical names and contextual `Go` matching avoid some false positives; conservative rules also miss valid wording. Negated claims can match. The output identifies text, not competence.
 
-## Optional OpenCode Go adapter
+Rust makes ownership, borrowed slices, Serde types, and `Result` boundaries explicit. The [Node wrapper](../server/evidence.mjs#L12) uses `execFile` without a shell, with 2 MB input, a three-second timeout, and a 1 MB output limit. It revalidates requirement order, source IDs, and exact quotations. There is no retrieval service, network client, or persistent index in the executable. Process startup adds overhead; no speed advantage has been measured.
 
-The Chat Completions adapter constructs at most 40,000 source characters, with up to 4,500 per source. A result must contain each role requirement exactly once and quote only supplied text. Validation checks both the full sources and the smaller model context. Cache inputs include the role, materials, recap, model, and endpoint.
+## Optional model boundary
 
-The key stays in server environment variables. The model has no tools or write actions. Invalid output, provider errors, and a 25-second timeout fall back to Rust matches. A short failure category is returned for diagnostics without provider response bodies. Quotation provenance does not establish factual truth or summary accuracy.
+[Brief construction](../server/briefs.mjs#L149) runs Rust first, even on a model-cache hit. Without a key it returns that local result. Otherwise, excerpt selection limits context to 40,000 code units overall and 4,500 per source. GLM-5.3 requests use `reasoning_effort: low`, a client user agent, and an opaque encounter/role session hash.
 
-GLM-5.3 uses `reasoning_effort: low` for this bounded organization task. Its [documented default is maximum reasoning](https://docs.z.ai/guides/llm/glm-5.3); reasoning remains enabled. Requests identify Staylinked through its user agent and carry a stable opaque session hash for the person, encounter, and role, following [OpenCode Go's client guidance](https://opencode.ai/docs/go/). No external provider SDK is needed.
+[Validation](../server/briefs.mjs#L103) requires every role requirement exactly once and checks quotations against both full sources and the actual excerpts. Cache keys include profile, encounter content, role, sources, model, and endpoint. Provider errors, invalid output, or the 25-second deadline return local matches with a fallback notice. The model has no tools or write actions. Exact citation checks establish provenance, not factual truth or summary accuracy.
 
-`npm run provider:check` runs an opt-in live check against the seeded fictional Aisha/Product Engineer fixture in an in-memory database. It checks citation validity and cache reuse, and prints status metadata without credentials or source text. It does not read or modify the user's stored records. Real-world latency and cost have not been benchmarked.
+## Verification and limits
+
+[Workflow tests](../tests/workflow.test.mjs) exercise ownership, revocation during lookup, concurrent uploads, replacement failures, cache invalidation, and CSV handling. [Client tests](../tests/api.test.mjs) cover account switches, deadlines, cancellation, and Blob errors. [Rust tests](../rust/src/lib.rs#L205) cover deterministic exact passages and vocabulary limits.
+
+The [QR parser](../src/lib/qr.ts) extracts only a safe event ID; the [scanner](../src/ScanQR.tsx#L91) resolves it against the local portal, never the encoded host. Camera capture requires explicit activation and a secure context. Cleanup stops media tracks, pending lookups, animation frames, and image URLs, including late permission grants. [Parser tests](../tests/qr.test.mjs) cover malformed and external URLs; physical-camera behavior remains untested.
+
+The opt-in [provider check](../scripts/provider-check.mjs) uses fictional in-memory fixtures to validate citations and cache reuse. Production scale, latency, and cost are unmeasured. SQLite/file operations are synchronous, lists lack pagination, and shared demo accounts are unsuitable for private information. QR submissions do not verify attendance or identity.

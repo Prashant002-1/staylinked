@@ -20,6 +20,10 @@ Use spacing and type hierarchy to separate content. Avoid stacked panels, decora
 
 Keep names and substantive content prominent. Use short action labels. Explain errors and consequential sharing choices where needed, and preserve clear feedback when saving. Implementation details belong in the documentation.
 
+Event name, date, and location are plain metadata under "Where we met." When the same two people meet again, a separate "Change meeting" button opens a radio menu with each event's date and location. The selected encounter is stored in the URL; switching it preserves the profile and resets role-specific passages. The note's byline shows when it was submitted or edited, separately from the event date.
+
+Use a select for a form value, a radio menu for switching among recorded meetings, and a menu for account actions. Keep dropdown icons inside the primitive's icon wrapper so library defaults cannot replace the SVG's children. Escape returns focus to the trigger; meeting names support typeahead.
+
 Check desktop and narrow phone widths, keyboard focus, Escape behavior, long content, empty states, and reduced motion. A completed build does not establish visual acceptance.
 
 ## Color rendering

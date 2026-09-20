@@ -15,4 +15,5 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: npm ci
       - run: npm run check
+      - run: npm run smoke
       - run: npm run format:check
